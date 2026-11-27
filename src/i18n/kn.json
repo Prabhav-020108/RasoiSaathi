@@ -57,5 +57,33 @@
     "setupLocal": "Local AI ಸೆಟ್ ಮಾಡಿ",
     "enterKey": "Gemini ಕೀ ನಮೂದಿಸಿ",
     "skipBasic": "ಸ್ಕಿಪ್ — Basic Mode"
+  },
+  "messages": {
+    "title": "WhatsApp ಇನ್‌ಬಾಕ್ಸ್",
+    "simulate": "ಸಂದೇಶ ಸಿಮ್ಯುಲೇಟ್ ಮಾಡಿ",
+    "senderName": "ಕಳುಹಿಸಿದವರ ಹೆಸರು",
+    "messageText": "ಸಂದೇಶ",
+    "send": "ಕಳುಹಿಸಿ",
+    "process": "ಪ್ರಕ್ರಿಯೆಗೊಳಿಸಿ",
+    "processing": "ಪ್ರಕ್ರಿಯೆ ನಡೆಯುತ್ತಿದೆ...",
+    "processed": "ಪ್ರಕ್ರಿಯೆಗೊಂಡಿದೆ",
+    "intent": "ಉದ್ದೇಶ",
+    "autoReply": "ಸೂಚಿಸಿದ ಉತ್ತರ",
+    "actionTaken": "ತೆಗೆದುಕೊಂಡ ಕ್ರಮ",
+    "expand": "ತೋರಿಸಿ",
+    "collapse": "ಮರೆಮಾಡಿ"
+  },
+  "menu": {
+    "title": "ಮೆನು ಪ್ರಸಾರ",
+    "subtitle": "ಒಮ್ಮೆ ಹೇಳಿ, ಎಲ್ಲರಿಗೂ ಅನುವಾದಿಸಿ",
+    "menuText": "ನಾಳೆಯ ಮೆನು",
+    "jainNote": "ಜೈನ್ ಟಿಪ್ಪಣಿ ಸೇರಿಸಿ",
+    "translateAndPreview": "ಅನುವಾದ ಮತ್ತು ಪೂರ್ವವೀಕ್ಷಣೆ",
+    "translating": "ಅನುವಾದಿಸಲಾಗುತ್ತಿದೆ...",
+    "copyText": "ನಕಲಿಸಿ",
+    "copied": "ನಕಲಿಸಲಾಗಿದೆ!",
+    "broadcastFor": "ಪ್ರಸಾರ ದಿನಾಂಕ",
+    "pastBroadcasts": "ಹಿಂದಿನ ಪ್ರಸಾರಗಳು",
+    "noBroadcasts": "ಇನ್ನೂ ಯಾವುದೇ ಪ್ರಸಾರವಿಲ್ಲ"
   }
 }

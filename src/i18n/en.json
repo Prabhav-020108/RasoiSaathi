@@ -57,5 +57,33 @@
     "setupLocal": "Set Up Local AI",
     "enterKey": "Enter Gemini Key",
     "skipBasic": "Skip — Basic Mode"
+  },
+  "messages": {
+    "title": "WhatsApp Inbox",
+    "simulate": "Simulate Message",
+    "senderName": "Sender Name",
+    "messageText": "Message",
+    "send": "Send",
+    "process": "Process",
+    "processing": "Processing...",
+    "processed": "Processed",
+    "intent": "Intent",
+    "autoReply": "Suggested Reply",
+    "actionTaken": "Action Taken",
+    "expand": "Show",
+    "collapse": "Hide"
+  },
+  "menu": {
+    "title": "Menu Broadcast",
+    "subtitle": "Dictate once, translate for all",
+    "menuText": "Tomorrow's Menu",
+    "jainNote": "Add Jain Note",
+    "translateAndPreview": "Translate & Preview",
+    "translating": "Translating...",
+    "copyText": "Copy",
+    "copied": "Copied!",
+    "broadcastFor": "Broadcasting for",
+    "pastBroadcasts": "Past Broadcasts",
+    "noBroadcasts": "No broadcasts yet"
   }
 }

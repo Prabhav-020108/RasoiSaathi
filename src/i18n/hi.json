@@ -57,5 +57,33 @@
     "setupLocal": "Set Up Local AI",
     "enterKey": "Enter Gemini Key",
     "skipBasic": "Skip — Basic Mode"
+  },
+  "messages": {
+    "title": "WhatsApp Inbox",
+    "simulate": "Message Simulate Karein",
+    "senderName": "Bhejne Wale Ka Naam",
+    "messageText": "Message",
+    "send": "Bhejein",
+    "process": "Process Karein",
+    "processing": "Process ho raha hai...",
+    "processed": "Processed",
+    "intent": "Intent",
+    "autoReply": "Suggested Reply",
+    "actionTaken": "Action Taken",
+    "expand": "Dikhayein",
+    "collapse": "Chhupayein"
+  },
+  "menu": {
+    "title": "Menu Broadcast",
+    "subtitle": "Ek baar bolein, sabhi bhashaon mein bhejein",
+    "menuText": "Kal Ka Menu",
+    "jainNote": "Jain Note Jodein",
+    "translateAndPreview": "Translate & Preview",
+    "translating": "Translate ho raha hai...",
+    "copyText": "Copy",
+    "copied": "Copy ho gaya!",
+    "broadcastFor": "Broadcast date",
+    "pastBroadcasts": "Pichhle Broadcasts",
+    "noBroadcasts": "Abhi tak koi broadcast nahi"
   }
 }
