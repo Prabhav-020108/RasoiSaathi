@@ -1,5 +1,13 @@
 # RasoiSaathi — Build Plan (Round 2)
 
+> **Accepted update (27 Nov 2026):** Gemini keys are configured only in the server environment. No app key-entry forms, browser key storage, or client-key headers. Configured Gemini is the automatic default, regardless of remembered fallback preferences, with no missing-key message. Without a key, display the unavailable status and retain Basic Mode plus optional Local AI. This decision supersedes the older setup wireframes and code sketches below.
+>
+> **Voice completion scope:** M opens and activates the voice console; M toggles listening there; Escape stops recognition/TTS. Ignore shortcuts while typing or using dialogs. Require final transcripts, reject low-confidence speech, guard overlapping submissions and stale callbacks, update SQLite and refresh affected data, and speak the result. Persist dictated menus and explicitly confirmed full monthly payment receipts. Always-on wake words, Whisper/Piper, production WhatsApp sending, and full offline database access remain future work.
+>
+> **Verification:** build, typecheck, lint, unit tests, browser speech-event regressions with an isolated database, and an isolated keyless Docker cold-start. Real microphone/noisy-kitchen testing is separate. Video, pitch deck, and deployment remain deferred.
+>
+> **Verified on 27 Nov 2026:** 32 unit tests, 6 mobile browser tests against the production Docker app, typecheck/lint, Node 22 production builds, isolated no-key API workflows, one approved live Gemini tally request using seeded demo data, and keyless Compose startup/restart persistence all passed. Existing Next.js 14 dependency audit findings still need review before public deployment; no framework migration was included in this work.
+
 > [!IMPORTANT]
 > **Deadline**: November 30, 11:59 PM IST
 > **Time available**: ~4 days (Nov 27-30)
@@ -254,7 +262,7 @@ export type AIProvider = 'gemini' | 'local' | 'basic';
 
 export function getAIProvider(): AIProvider {
   // Check for Gemini API key (from env or user-entered in settings)
-  if (process.env.NEXT_PUBLIC_GEMINI_API_KEY || getStoredApiKey()) {
+  if (process.env.GEMINI_API_KEY) {
     return 'gemini';
   }
   
@@ -329,7 +337,7 @@ These are the features we will demo in the 3-minute video.
 
 #### F1: Voice-First Dashboard
 - Prominent mic button (always visible, floating)
-- Wake-word activation or tap-to-talk
+- Tap-to-talk or M-key activation (always-on wake word deferred)
 - Voice command: "Aaj kitne tiffin?" gets spoken answer with today's tally
 - Dashboard cards: total tiffins today, cancellations, pending payments, dietary breakdown
 - Language selector (Hindi, English, Kannada, Tamil, Telugu, Marathi)
@@ -1361,7 +1369,7 @@ The prototype comes pre-loaded with realistic demo data so it shows the main scr
 - [ ] Build layout: bottom nav, header, floating mic button
 - [ ] Dashboard page with tally card (static initially)
 - [ ] Customer list page with CRUD API routes
-- [ ] Settings page with API key input
+- [x] Settings with AI availability status; keys configured only on the server
 
 ### Day 2 Breakdown (Nov 28)
 - [ ] Build `useVoice` hook (Web Speech API wrapper)
@@ -1494,7 +1502,7 @@ curl -X POST http://localhost:3000/api/customers \
 4. Verify voice response with tally
 5. Navigate to Customers — verify list loads
 6. Navigate to Messages — verify simulated WhatsApp messages show
-7. Add Gemini API key in Settings — verify AI features activate
+7. Set GEMINI_API_KEY on the server and restart — verify Gemini is the default and missing-key notices are absent
 8. Test voice command in Hindi, then switch language to Kannada, verify UI changes
 9. Process a WhatsApp message — verify intent detection + tally update
 10. Broadcast a menu — verify translation preview
