@@ -55,7 +55,6 @@
     "notConfiguredTitle": "AI కీ సెట్ చేయలేదు",
     "notConfiguredDesc": "Gemini API కీ లేదు. మీరు Local AI లేదా Basic Mode లో కొనసాగవచ్చు.",
     "setupLocal": "Local AI సెట్ చేయండి",
-    "enterKey": "Gemini కీ నమోదు చేయండి",
     "skipBasic": "స్కిప్ — Basic Mode"
   },
   "messages": {

@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Cpu, KeyRound, SkipForward, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Cpu, SkipForward, AlertTriangle } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useApp } from "@/components/providers/AppProvider";
 import { initLocalAI } from "@/lib/runanywhere";
 
@@ -14,12 +13,10 @@ export function AISetupModal() {
     setAISetupOpen,
     chooseBasicMode,
     chooseLocalAI,
-    saveGeminiKey,
     dict,
+    geminiConfigured,
   } = useApp();
 
-  const [showKeyForm, setShowKeyForm] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState("");
   const [downloadingLocal, setDownloadingLocal] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressMsg, setProgressMsg] = useState("Preparing Local AI engine...");
@@ -31,7 +28,6 @@ export function AISetupModal() {
       setProgress(0);
       setProgressMsg("Preparing Local AI engine...");
       setLocalError(null);
-      setShowKeyForm(false);
     }
   }, [aiSetupOpen]);
 
@@ -55,17 +51,9 @@ export function AISetupModal() {
     }
   };
 
-  const handleKeySubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!apiKeyInput.trim()) return;
-    saveGeminiKey(apiKeyInput);
-    setApiKeyInput("");
-    setShowKeyForm(false);
-  };
-
   return (
     <Dialog
-      open={aiSetupOpen}
+      open={aiSetupOpen && !geminiConfigured}
       onClose={() => setAISetupOpen(false)}
       title={dict.aiBanner.notConfiguredTitle}
     >
@@ -124,33 +112,6 @@ export function AISetupModal() {
               RunAnywhere on-device mode caches SmolLM2-360M in browser storage (zero data leaves your phone).
             </p>
           </div>
-        ) : showKeyForm ? (
-          <form onSubmit={handleKeySubmit} className="space-y-3">
-            <label className="block text-sm font-semibold text-stone-700">
-              Google AI Studio Gemini API Key
-            </label>
-            <Input
-              type="password"
-              placeholder="AIza..."
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => setShowKeyForm(false)}
-              >
-                Back
-              </Button>
-              <Button type="submit" variant="primary" className="flex-1">
-                <CheckCircle2 className="w-4 h-4" />
-                Save Key
-              </Button>
-            </div>
-          </form>
         ) : (
           <div className="space-y-2.5">
             <button
@@ -168,26 +129,6 @@ export function AISetupModal() {
                   </p>
                   <p className="text-xs text-stone-500">
                     RunAnywhere SDK • Works offline, zero API key needed
-                  </p>
-                </div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowKeyForm(true)}
-              className="w-full text-left rounded-2xl border-2 border-orange-200 bg-orange-50/70 hover:bg-orange-100/70 p-4 transition-colors min-h-[64px]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[#F97316] text-white flex items-center justify-center shrink-0">
-                  <KeyRound className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="font-bold text-[#1C1917] text-sm">
-                    {dict.aiBanner.enterKey}
-                  </p>
-                  <p className="text-xs text-stone-500">
-                    Best accuracy &amp; multilingual voice via Google AI Studio
                   </p>
                 </div>
               </div>

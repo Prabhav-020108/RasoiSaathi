@@ -19,7 +19,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApp } from "@/components/providers/AppProvider";
-import { getStoredGeminiKey } from "@/lib/ai-provider";
 import { SUPPORTED_LANGUAGES } from "@/lib/utils";
 
 interface MessageItem {
@@ -100,12 +99,10 @@ export default function MessagesPage() {
     setActionError(null);
     setProcessingId(msg.id);
     try {
-      const clientGeminiKey = getStoredGeminiKey();
       const res = await fetch(`/api/messages/${msg.id}/process`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(clientGeminiKey ? { "x-gemini-key": clientGeminiKey } : {}),
         },
         body: JSON.stringify({
           tierHint: aiTier === "basic" ? "basic" : undefined,

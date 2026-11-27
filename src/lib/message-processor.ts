@@ -123,11 +123,11 @@ export async function processMessageRecord(
       remaining: Math.max(0, p.amount - p.paidAmount),
     }));
 
-  let parsed: ParsedCommand | null = options.localParsed ?? null;
+  const geminiKey = resolveGeminiKey(options.apiKeyOverride);
+  let parsed: ParsedCommand | null = geminiKey ? null : options.localParsed ?? null;
   let tierUsed: "gemini" | "local" | "basic" = parsed ? "local" : "basic";
 
-  const geminiKey = resolveGeminiKey(options.apiKeyOverride);
-  if (!parsed && options.tierHint !== "basic" && geminiKey) {
+  if (!parsed && geminiKey) {
     try {
       const context: GeminiVoiceContext = {
         cookName: cook?.name || "Sunita Devi",

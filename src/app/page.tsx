@@ -2,7 +2,7 @@
 
 import React from "react";
 import useSWR from "swr";
-import { AlertTriangle, Cpu, KeyRound, SkipForward } from "lucide-react";
+import { AlertTriangle, Cpu, SkipForward } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { TallyCard } from "@/components/dashboard/TallyCard";
 import { PendingPaymentCard } from "@/components/dashboard/PendingPaymentCard";
@@ -51,27 +51,19 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setAISetupOpen(true)}
-                  className="min-h-[42px] rounded-xl bg-[#7C3AED] text-white px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform"
+                  className="min-h-[48px] rounded-xl bg-[#7C3AED] text-white px-2 py-1.5 text-sm font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform"
                 >
                   <Cpu className="w-3.5 h-3.5 shrink-0" />
                   <span>Local AI</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAISetupOpen(true)}
-                  className="min-h-[42px] rounded-xl bg-[#F97316] text-white px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform"
-                >
-                  <KeyRound className="w-3.5 h-3.5 shrink-0" />
-                  <span>API Key</span>
-                </button>
-                <button
-                  type="button"
                   onClick={chooseBasicMode}
-                  className="min-h-[42px] rounded-xl bg-stone-100 text-stone-700 border border-stone-200 px-2 py-1.5 text-[11px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform"
+                  className="min-h-[48px] rounded-xl bg-stone-100 text-stone-700 border border-stone-200 px-2 py-1.5 text-sm font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform"
                 >
                   <SkipForward className="w-3.5 h-3.5 shrink-0" />
                   <span>Basic</span>

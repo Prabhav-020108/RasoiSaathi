@@ -20,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/components/providers/AppProvider";
 import { useVoice } from "@/hooks/useVoice";
-import { getStoredGeminiKey } from "@/lib/ai-provider";
 import type { CustomerListItem } from "@/components/customers/CustomerCard";
 
 interface BroadcastItem {
@@ -99,12 +98,10 @@ export default function MenuPage() {
     setSubmitError(null);
     setTranslating(true);
     try {
-      const clientGeminiKey = getStoredGeminiKey();
       const res = await fetch("/api/menu/broadcast", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(clientGeminiKey ? { "x-gemini-key": clientGeminiKey } : {}),
         },
         body: JSON.stringify({
           menuText: menuText.trim(),

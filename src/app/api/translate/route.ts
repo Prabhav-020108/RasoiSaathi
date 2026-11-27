@@ -15,15 +15,12 @@ export async function POST(request: NextRequest) {
     const text = typeof body.text === "string" ? body.text.trim() : "";
     const fromLang = typeof body.fromLang === "string" ? body.fromLang.trim() : "auto";
     const toLang = typeof body.toLang === "string" ? body.toLang.trim() : "hi";
-    const clientApiKey =
-      (typeof body.apiKey === "string" ? body.apiKey : null) ??
-      request.headers.get("x-gemini-key");
 
     if (!text) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
-    const geminiKey = resolveGeminiKey(clientApiKey);
+    const geminiKey = resolveGeminiKey();
     if (!geminiKey) {
       return NextResponse.json({
         translated: text,

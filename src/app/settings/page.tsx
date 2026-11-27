@@ -20,7 +20,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/components/providers/AppProvider";
 import { SUPPORTED_LANGUAGES } from "@/lib/utils";
-import { getStoredGeminiKey } from "@/lib/ai-provider";
 import { hasLocalAICachedFlag, isLocalAIReady } from "@/lib/runanywhere";
 
 export default function SettingsPage() {
@@ -32,7 +31,7 @@ export default function SettingsPage() {
     dict,
     aiTier,
     geminiConfigured,
-    saveGeminiKey,
+    aiStatusLoading,
     chooseLocalAI,
     chooseBasicMode,
     setAISetupOpen,
@@ -42,7 +41,6 @@ export default function SettingsPage() {
   const [cookName, setCookName] = useState("Sunita Devi");
   const [cookPhone, setCookPhone] = useState("+91 98765 43210");
   const [defaultPrice, setDefaultPrice] = useState("3000");
-  const [apiKeyInput, setApiKeyInput] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -53,10 +51,6 @@ export default function SettingsPage() {
       setDefaultPrice(String(cook.defaultPrice));
     }
   }, [cook]);
-
-  useEffect(() => {
-    setApiKeyInput(getStoredGeminiKey());
-  }, [aiTier]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,7 +158,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* AI Provider & Gemini Key */}
+        {/* AI availability */}
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -187,27 +181,9 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {geminiConfigured ? (
-              <p className="text-xs text-[#16A34A] font-semibold bg-green-50 rounded-xl p-3">
-                ✅ Server GEMINI_API_KEY is configured and active (Tier 1 Cloud AI).
-              </p>
-            ) : (
+            {!aiStatusLoading && !geminiConfigured && (
               <div className="space-y-2.5">
-                <div className="flex gap-2">
-                  <Input
-                    type="password"
-                    placeholder="Paste Gemini API key (optional)..."
-                    value={apiKeyInput}
-                    onChange={(e) => setApiKeyInput(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={() => saveGeminiKey(apiKeyInput)}
-                  >
-                    Save
-                  </Button>
-                </div>
+                <p className="text-sm text-stone-600">{dict.aiBanner.notConfiguredTitle}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     type="button"

@@ -55,7 +55,6 @@
     "notConfiguredTitle": "AI சாவி அமைக்கப்படவில்லை",
     "notConfiguredDesc": "Gemini API சாவி இல்லை. Local AI அல்லது Basic Mode ஐப் பயன்படுத்தலாம்.",
     "setupLocal": "Local AI அமை",
-    "enterKey": "Gemini சாவி உள்ளிடவும்",
     "skipBasic": "தவிர் — Basic Mode"
   },
   "messages": {

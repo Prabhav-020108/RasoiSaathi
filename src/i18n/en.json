@@ -55,7 +55,6 @@
     "notConfiguredTitle": "AI Key Not Configured",
     "notConfiguredDesc": "No Gemini API key is configured. You can run Local AI on-device or continue in Basic Mode.",
     "setupLocal": "Set Up Local AI",
-    "enterKey": "Enter Gemini Key",
     "skipBasic": "Skip — Basic Mode"
   },
   "messages": {

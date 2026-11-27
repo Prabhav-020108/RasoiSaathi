@@ -55,7 +55,6 @@
     "notConfiguredTitle": "AI ಕೀ ಸೆಟ್ ಆಗಿಲ್ಲ",
     "notConfiguredDesc": "Gemini API ಕೀ ಇಲ್ಲ. ನೀವು Local AI ಬಳಸಬಹುದು ಅಥವಾ Basic Mode ನಲ್ಲಿ ಮುಂದುವರಿಯಬಹುದು.",
     "setupLocal": "Local AI ಸೆಟ್ ಮಾಡಿ",
-    "enterKey": "Gemini ಕೀ ನಮೂದಿಸಿ",
     "skipBasic": "ಸ್ಕಿಪ್ — Basic Mode"
   },
   "messages": {

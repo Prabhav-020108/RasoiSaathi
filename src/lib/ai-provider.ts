@@ -3,28 +3,12 @@ import type { KnownCustomerRef, ParsedCommand } from "./voice-fallback";
 export type AITier = "gemini" | "local" | "basic";
 
 export const AI_MODE_STORAGE_KEY = "rasoisaathi_ai_mode";
-export const GEMINI_KEY_STORAGE_KEY = "rasoisaathi_gemini_key";
 export const LOCAL_AI_READY_KEY = "rasoisaathi_local_ai_ready";
 
-export function getStoredGeminiKey(): string {
-  if (typeof window === "undefined") return "";
-  try {
-    return window.localStorage.getItem(GEMINI_KEY_STORAGE_KEY)?.trim() ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export function setStoredGeminiKey(key: string): void {
+export function clearLegacyGeminiKey(): void {
   if (typeof window === "undefined") return;
   try {
-    const trimmed = key.trim();
-    if (trimmed) {
-      window.localStorage.setItem(GEMINI_KEY_STORAGE_KEY, trimmed);
-      window.localStorage.setItem(AI_MODE_STORAGE_KEY, "gemini");
-    } else {
-      window.localStorage.removeItem(GEMINI_KEY_STORAGE_KEY);
-    }
+    window.localStorage.removeItem("rasoisaathi_gemini_key");
   } catch {
     // Ignore storage quota / privacy mode errors
   }
@@ -56,7 +40,7 @@ export function resolveEffectiveAITier(serverGeminiConfigured: boolean): {
   tier: AITier;
   needsSetupPrompt: boolean;
 } {
-  if (serverGeminiConfigured || getStoredGeminiKey()) {
+  if (serverGeminiConfigured) {
     return { tier: "gemini", needsSetupPrompt: false };
   }
   const storedMode = getStoredAIMode();
@@ -93,10 +77,9 @@ export async function processVoiceCommand(
     customers?: KnownCustomerRef[];
   }
 ): Promise<VoiceProcessAPIResponse> {
-  const clientGeminiKey = getStoredGeminiKey();
   let localParsed: ParsedCommand | null = null;
 
-  if (options.tier === "local" && !clientGeminiKey) {
+  if (options.tier === "local") {
     const { localIntentParse } = await import("./runanywhere");
     localParsed = await localIntentParse(text, cookLang, {
       cookLang,
@@ -108,7 +91,6 @@ export async function processVoiceCommand(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(clientGeminiKey ? { "x-gemini-key": clientGeminiKey } : {}),
     },
     body: JSON.stringify({
       text,
@@ -132,9 +114,7 @@ export async function translateText(
   toLang: string,
   tier: AITier
 ): Promise<{ translated: string; tierUsed: AITier; notice?: string }> {
-  const clientGeminiKey = getStoredGeminiKey();
-
-  if (tier === "local" && !clientGeminiKey) {
+  if (tier === "local") {
     const { localTranslate } = await import("./runanywhere");
     const res = await localTranslate(text, fromLang, toLang);
     return {
@@ -148,7 +128,6 @@ export async function translateText(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(clientGeminiKey ? { "x-gemini-key": clientGeminiKey } : {}),
     },
     body: JSON.stringify({ text, fromLang, toLang }),
   });

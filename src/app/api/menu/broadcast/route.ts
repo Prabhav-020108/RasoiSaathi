@@ -54,9 +54,6 @@ export async function POST(request: NextRequest) {
 
     const fullMenuText = jainNote ? `${menuText}\n${jainNote}` : menuText;
 
-    const clientApiKey =
-      (typeof body.apiKey === "string" ? body.apiKey : null) ??
-      request.headers.get("x-gemini-key");
 
     const [cook, activeCustomers] = await Promise.all([
       prisma.cook.findFirst(),
@@ -74,8 +71,7 @@ export async function POST(request: NextRequest) {
     const translationsMap = await buildMenuTranslations(
       fullMenuText,
       cookLang,
-      targetLanguages,
-      clientApiKey
+      targetLanguages
     );
 
     const tomorrowUTC = new Date(getTodayUTC().getTime() + 24 * 60 * 60 * 1000);

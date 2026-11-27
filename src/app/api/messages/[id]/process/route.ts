@@ -19,9 +19,6 @@ export async function POST(
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const clientApiKey =
-      (typeof body.apiKey === "string" ? body.apiKey : null) ??
-      request.headers.get("x-gemini-key");
     const tierHint = typeof body.tierHint === "string" ? body.tierHint : undefined;
     const localParsed =
       body.localParsed && typeof body.localParsed === "object"
@@ -29,7 +26,6 @@ export async function POST(
         : null;
 
     const result = await processMessageRecord(context.params.id, {
-      apiKeyOverride: clientApiKey,
       tierHint,
       localParsed,
     });

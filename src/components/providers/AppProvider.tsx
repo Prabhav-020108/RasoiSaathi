@@ -7,7 +7,7 @@ import {
   type AITier,
   resolveEffectiveAITier,
   setStoredAIMode,
-  setStoredGeminiKey,
+  clearLegacyGeminiKey,
 } from "@/lib/ai-provider";
 
 export interface CookProfile {
@@ -33,12 +33,12 @@ interface AppContextValue {
   dict: Dictionary;
   aiTier: AITier;
   geminiConfigured: boolean;
+  aiStatusLoading: boolean;
   needsAISetup: boolean;
   aiSetupOpen: boolean;
   setAISetupOpen: (open: boolean) => void;
   chooseBasicMode: () => void;
   chooseLocalAI: () => void;
-  saveGeminiKey: (key: string) => void;
   showToast: (message: string, type?: "success" | "error" | "info") => void;
 }
 
@@ -80,8 +80,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const syncAIState = useCallback(() => {
     const resolved = resolveEffectiveAITier(geminiConfigured);
     setAiTier(resolved.tier);
-    setNeedsAISetup(resolved.needsSetupPrompt);
-  }, [geminiConfigured]);
+    setNeedsAISetup(Boolean(healthData) && resolved.needsSetupPrompt);
+    if (geminiConfigured) setAISetupOpen(false);
+  }, [geminiConfigured, healthData]);
+
+  useEffect(() => {
+    clearLegacyGeminiKey();
+  }, []);
 
   useEffect(() => {
     syncAIState();
@@ -132,22 +137,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     showToast("Local AI (RunAnywhere) selected", "success");
   }, [showToast, syncAIState]);
 
-  const saveGeminiKey = useCallback(
-    (key: string) => {
-      setStoredGeminiKey(key);
-      if (!key.trim()) {
-        setStoredAIMode("basic");
-      }
-      syncAIState();
-      setAISetupOpen(false);
-      showToast(
-        key.trim() ? "Gemini API key saved locally" : "Gemini API key cleared",
-        "success"
-      );
-    },
-    [showToast, syncAIState]
-  );
-
   const dict = getDictionary(lang);
 
   return (
@@ -163,12 +152,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         dict,
         aiTier,
         geminiConfigured,
+        aiStatusLoading: !healthData,
         needsAISetup,
         aiSetupOpen,
         setAISetupOpen,
         chooseBasicMode,
         chooseLocalAI,
-        saveGeminiKey,
         showToast,
       }}
     >

@@ -98,10 +98,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Voice command text is required" }, { status: 400 });
     }
 
-    const clientApiKey =
-      (typeof body.apiKey === "string" ? body.apiKey : null) ??
-      request.headers.get("x-gemini-key");
-    const tierHint = typeof body.tierHint === "string" ? body.tierHint : undefined;
+    const geminiKey = resolveGeminiKey();
 
     const currentMonth = getCurrentMonthKey();
     const [cook, customers, tally, payments] = await Promise.all([
@@ -132,14 +129,13 @@ export async function POST(request: NextRequest) {
 
     // 1. Pre-parsed Tier 2 (RunAnywhere local LLM in browser)
     const localParsed = normalizeLocalParsed(body.localParsed);
-    if (localParsed) {
+    if (localParsed && !geminiKey) {
       parsed = localParsed;
       tierUsed = "local";
     }
 
     // 2. Tier 1 Gemini Cloud AI
-    if (!parsed && tierHint !== "basic") {
-      const geminiKey = resolveGeminiKey(clientApiKey);
+    if (!parsed) {
       if (geminiKey) {
         try {
           const context: GeminiVoiceContext = {
@@ -171,9 +167,8 @@ export async function POST(request: NextRequest) {
           parsed = await geminiProcess(text, cookLang, context, geminiKey);
           tierUsed = "gemini";
         } catch (err) {
-          console.warn("Gemini voice parse failed, falling back to Tier 3:", err);
-          fallbackReason =
-            err instanceof Error ? err.message : "Gemini unavailable, used keyword fallback";
+          console.warn("Gemini voice parse failed; using Basic Mode.");
+          fallbackReason = "Cloud AI unavailable; using Basic Mode.";
         }
       }
     }

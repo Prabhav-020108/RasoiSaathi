@@ -18,7 +18,7 @@ export function Header({
   showGreeting = false,
   rightSlot,
 }: HeaderProps) {
-  const { cook, lang, setLang, dict, aiTier, needsAISetup, setAISetupOpen } = useApp();
+  const { cook, lang, setLang, dict, aiTier, needsAISetup, setAISetupOpen, geminiConfigured } = useApp();
 
   const cookFirstName = cook?.name ? cook.name.split(" ")[0] : "Sunita";
   const greetingText = dict.didi
@@ -88,6 +88,7 @@ export function Header({
           <button
             type="button"
             onClick={() => setAISetupOpen(true)}
+            disabled={geminiConfigured}
             className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-[11px] font-bold transition-transform active:scale-95 min-h-[40px] ${aiBadge.cls}`}
             title="AI Provider Status"
           >
