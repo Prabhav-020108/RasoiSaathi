@@ -1,0 +1,61 @@
+{
+  "appName": "RasoiSaathi",
+  "greeting": "Namaste",
+  "didi": "didi",
+  "todayTiffin": "Aaj Ka Tiffin",
+  "total": "Total",
+  "regular": "Regular",
+  "jain": "Jain",
+  "lessOil": "Less-oil",
+  "noOnionGarlic": "No-onion-garlic",
+  "skipped": "Skip",
+  "paused": "Paused",
+  "cancelled": "Cancel",
+  "extra": "Extra",
+  "pending": "Pending",
+  "collected": "Collected",
+  "newMessages": "New Messages",
+  "recentUpdates": "Recent Updates",
+  "quickActions": "Quick Actions",
+  "talkToRasoiSaathi": "RasoiSaathi se baat karein",
+  "tapMicHint": "Bolkar kaam karein",
+  "nav": {
+    "home": "Home",
+    "customers": "Cust",
+    "payments": "Pay",
+    "menu": "Menu",
+    "settings": "Set"
+  },
+  "customers": {
+    "title": "Customers",
+    "add": "Add",
+    "searchPlaceholder": "Naam ya number khojein...",
+    "all": "All",
+    "active": "Active",
+    "paused": "Paused",
+    "cancelled": "Cancelled",
+    "paid": "Paid",
+    "pending": "Pending",
+    "perMonth": "/mo",
+    "empty": "Koi customer nahi mila"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Bhasha / Language",
+    "aiSetup": "AI Provider & Gemini Key",
+    "cookProfile": "Cook Profile",
+    "business": "Business Settings",
+    "data": "Demo Data",
+    "save": "Save Karein",
+    "saved": "Settings save ho gayi!",
+    "exportData": "Export Data",
+    "resetDemo": "Reset Demo"
+  },
+  "aiBanner": {
+    "notConfiguredTitle": "AI Key Not Configured",
+    "notConfiguredDesc": "Gemini API key set nahi hai. Aap Local AI chala sakte hain ya Basic Mode mein kaam jari rakh sakte hain.",
+    "setupLocal": "Set Up Local AI",
+    "enterKey": "Enter Gemini Key",
+    "skipBasic": "Skip — Basic Mode"
+  }
+}

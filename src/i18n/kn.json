@@ -1,0 +1,61 @@
+{
+  "appName": "RasoiSaathi",
+  "greeting": "ನಮಸ್ಕಾರ",
+  "didi": "ಅಕ್ಕ",
+  "todayTiffin": "ಇಂದಿನ ಟಿಫಿನ್",
+  "total": "ಒಟ್ಟು",
+  "regular": "Regular",
+  "jain": "Jain",
+  "lessOil": "Less-oil",
+  "noOnionGarlic": "No-onion-garlic",
+  "skipped": "ಸ್ಕಿಪ್",
+  "paused": "ತಡೆಹಿಡಿದಿದೆ",
+  "cancelled": "ರದ್ದು",
+  "extra": "ಹೆಚ್ಚುವರಿ",
+  "pending": "ಬಾಕಿ",
+  "collected": "ಸಂಗ್ರಹ",
+  "newMessages": "ಹೊಸ ಸಂದೇಶಗಳು",
+  "recentUpdates": "ಇತ್ತೀಚಿನ ಅಪ್‌ಡೇಟ್‌ಗಳು",
+  "quickActions": "ತ್ವರಿತ ಕ್ರಿಯೆಗಳು",
+  "talkToRasoiSaathi": "RasoiSaathi ಜೊತೆ ಮಾತನಾಡಿ",
+  "tapMicHint": "ಮಾತನಾಡಲು ಮೈಕ್ ಒತ್ತಿ",
+  "nav": {
+    "home": "Home",
+    "customers": "Cust",
+    "payments": "Pay",
+    "menu": "Menu",
+    "settings": "Set"
+  },
+  "customers": {
+    "title": "ಗ್ರಾಹಕರು",
+    "add": "ಸೇರಿಸಿ",
+    "searchPlaceholder": "ಹೆಸರು ಅಥವಾ ಫೋನ್ ಹುಡುಕಿ...",
+    "all": "ಎಲ್ಲಾ",
+    "active": "ಸಕ್ರಿಯ",
+    "paused": "ವಿರಾಮ",
+    "cancelled": "ರದ್ದು",
+    "paid": "ಪಾವತಿ ಆಗಿದೆ",
+    "pending": "ಬಾಕಿ",
+    "perMonth": "/ತಿಂಗಳು",
+    "empty": "ಗ್ರಾಹಕರು ಕಂಡುಬಂದಿಲ್ಲ"
+  },
+  "settings": {
+    "title": "ಸೆಟ್ಟಿಂಗ್‌ಗಳು",
+    "language": "ಭಾಷೆ / Language",
+    "aiSetup": "AI Provider & Gemini Key",
+    "cookProfile": "ಅಡುಗೆ ಪ್ರೊಫೈಲ್",
+    "business": "ವ್ಯಾಪಾರ ಸೆಟ್ಟಿಂಗ್‌ಗಳು",
+    "data": "ಡೆಮೊ ಡೇಟಾ",
+    "save": "ಉಳಿಸಿ",
+    "saved": "ಸೆಟ್ಟಿಂಗ್‌ಗಳು ಉಳಿಸಲಾಗಿದೆ!",
+    "exportData": "ಡೇಟಾ ರಫ್ತು",
+    "resetDemo": "ಡೆಮೊ ಮರುಹೊಂದಿಸಿ"
+  },
+  "aiBanner": {
+    "notConfiguredTitle": "AI ಕೀ ಸೆಟ್ ಆಗಿಲ್ಲ",
+    "notConfiguredDesc": "Gemini API ಕೀ ಇಲ್ಲ. ನೀವು Local AI ಬಳಸಬಹುದು ಅಥವಾ Basic Mode ನಲ್ಲಿ ಮುಂದುವರಿಯಬಹುದು.",
+    "setupLocal": "Local AI ಸೆಟ್ ಮಾಡಿ",
+    "enterKey": "Gemini ಕೀ ನಮೂದಿಸಿ",
+    "skipBasic": "ಸ್ಕಿಪ್ — Basic Mode"
+  }
+}

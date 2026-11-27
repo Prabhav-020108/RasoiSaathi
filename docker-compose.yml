@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  rasoisaathi:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DATABASE_URL=file:/app/data/rasoisaathi.db
+    volumes:
+      - rasoisaathi-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  rasoisaathi-data:

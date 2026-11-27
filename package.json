@@ -1,0 +1,46 @@
+{
+  "name": "rasoisaathi",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/copy-runanywhere-wasm.mjs && next dev",
+    "build": "node scripts/copy-runanywhere-wasm.mjs && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "copy:wasm": "node scripts/copy-runanywhere-wasm.mjs",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "test": "tsx --test src/lib/__tests__/*.test.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@prisma/client": "^5.22.0",
+    "@runanywhere/web": "^0.20.27",
+    "@runanywhere/web-llamacpp": "^0.20.27",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.460.0",
+    "next": "14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "swr": "^2.2.5",
+    "tailwind-merge": "^2.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.10",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.5",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8.4.49",
+    "prisma": "^5.22.0",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

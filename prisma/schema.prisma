@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Cook {
+  id           String     @id @default(cuid())
+  name         String
+  phone        String     @unique
+  language     String     @default("hi") // hi, en, kn, ta, te, mr
+  defaultPrice Int        @default(3000)
+  createdAt    DateTime   @default(now())
+  customers    Customer[]
+}
+
+model Customer {
+  id           String       @id @default(cuid())
+  cookId       String
+  cook         Cook         @relation(fields: [cookId], references: [id], onDelete: Cascade)
+  name         String
+  phone        String?
+  language     String       @default("hi")
+  dietaryPref  String       @default("regular") // regular, jain, less-oil, no-onion-garlic
+  monthlyPrice Int
+  status       String       @default("active") // active, paused, cancelled
+  pauseUntil   DateTime?
+  specialNotes String?
+  createdAt    DateTime     @default(now())
+  payments     Payment[]
+  dailyOrders  DailyOrder[]
+  messages     Message[]
+}
+
+model DailyOrder {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  date       DateTime
+  status     String   @default("active") // active, skipped, cancelled, extra
+  extraItems String?  // e.g., "2 extra roti"
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, date])
+}
+
+model Payment {
+  id           String    @id @default(cuid())
+  customerId   String
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  month        String    // e.g., "2026-11"
+  amount       Int
+  status       String    @default("pending") // pending, paid, partial
+  paidAmount   Int       @default(0)
+  paidAt       DateTime?
+  reminderSent Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  @@unique([customerId, month])
+}
+
+model Message {
+  id             String    @id @default(cuid())
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  senderName     String
+  originalText   String
+  originalLang   String
+  translatedText String?
+  translatedLang String?
+  intent         String?   // skip, cancel, pause, extra, diet-change, payment, unknown
+  status         String    @default("new") // new, processed, ignored
+  autoReply      String?
+  createdAt      DateTime  @default(now())
+}
+
+model MenuBroadcast {
+  id           String    @id @default(cuid())
+  date         DateTime
+  menuText     String    // original in cook's language
+  translations String    // JSON: {"hi": "...", "en": "...", "kn": "..."}
+  jainNote     String?
+  sentAt       DateTime?
+  createdAt    DateTime  @default(now())
+}

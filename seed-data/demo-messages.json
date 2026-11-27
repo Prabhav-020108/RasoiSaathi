@@ -1,0 +1,52 @@
+[
+  {
+    "senderName": "Amit Verma",
+    "originalText": "Aunty aaj skip kardo, office mein party hai",
+    "originalLang": "hi",
+    "translatedText": "आंटी आज टिफिन स्किप कर दो, ऑफिस में पार्टी है",
+    "translatedLang": "hi",
+    "intent": "skip",
+    "status": "processed",
+    "autoReply": "✅ Aaj ka tiffin skip ho gaya hai, Amit ji."
+  },
+  {
+    "senderName": "Sarah Thomas",
+    "originalText": "Please skip tomorrow, I have an office party",
+    "originalLang": "en",
+    "translatedText": "कृपया कल टिफिन स्किप कर दें, मेरी ऑफिस पार्टी है",
+    "translatedLang": "hi",
+    "intent": "skip",
+    "status": "new",
+    "autoReply": null
+  },
+  {
+    "senderName": "Pooja Reddy",
+    "originalText": "Rendi extra roti pack cheyyandi",
+    "originalLang": "te",
+    "translatedText": "दो एक्स्ट्रा रोटी पैक कर दीजिए",
+    "translatedLang": "hi",
+    "intent": "extra",
+    "status": "new",
+    "autoReply": null
+  },
+  {
+    "senderName": "Meena Ji",
+    "originalText": "3 din ke liye tiffin band kardo",
+    "originalLang": "hi",
+    "translatedText": "3 दिन के लिए टिफिन बंद कर दो",
+    "translatedLang": "hi",
+    "intent": "pause",
+    "status": "processed",
+    "autoReply": "⏸️ Theek hai Meena ji, 3 din ke liye pause kar diya hai."
+  },
+  {
+    "senderName": "Rajesh Kumar",
+    "originalText": "Kal se Jain khana banana please",
+    "originalLang": "hi",
+    "translatedText": "कल से जैन खाना बनाना प्लीज़",
+    "translatedLang": "hi",
+    "intent": "diet-change",
+    "status": "new",
+    "autoReply": null
+  }
+]
