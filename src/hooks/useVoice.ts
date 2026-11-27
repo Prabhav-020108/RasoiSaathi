@@ -92,13 +92,18 @@ function getFriendlyErrorMessage(code: string, lang: string): string {
 
 export interface UseVoiceOptions {
   lang?: string;
+  kitchen?: boolean;
   onFinalTranscript?: (transcript: string, confidence: number) => void;
+  onRecognitionFailure?: (code: string) => void;
 }
 
 export function useVoice(options: UseVoiceOptions = {}) {
   const lang = options.lang ?? "hi";
+  const kitchen = options.kitchen ?? false;
   const onFinalTranscriptRef = useRef(options.onFinalTranscript);
   onFinalTranscriptRef.current = options.onFinalTranscript;
+  const onFailureRef = useRef(options.onRecognitionFailure);
+  onFailureRef.current = options.onRecognitionFailure;
 
   const [isSTTSupported, setIsSTTSupported] = useState(false);
   const [isTTSSupported, setIsTTSSupported] = useState(false);
@@ -115,6 +120,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
   const ttsSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finalCapturedRef = useRef(false);
   const latestTranscriptRef = useRef("");
+  const finishSpeakingRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -136,11 +142,14 @@ export function useVoice(options: UseVoiceOptions = {}) {
   }, []);
 
   const stopSpeaking = useCallback(() => {
+    const ownedSpeech = Boolean(finishSpeakingRef.current);
+    finishSpeakingRef.current?.();
+    finishSpeakingRef.current = null;
     if (ttsSafetyTimerRef.current) {
       clearTimeout(ttsSafetyTimerRef.current);
       ttsSafetyTimerRef.current = null;
     }
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    if (ownedSpeech && "speechSynthesis" in window) {
       try {
         window.speechSynthesis.cancel();
       } catch {
@@ -184,6 +193,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
 
   const startListening = useCallback(() => {
     if (typeof window === "undefined") return false;
+    if (!kitchen && document.documentElement.hasAttribute("data-kitchen-mode")) return false;
 
     const SpeechCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechCtor) {
@@ -281,21 +291,23 @@ export function useVoice(options: UseVoiceOptions = {}) {
         setTranscript(trimmedFinal);
         setInterimTranscript("");
         setConfidence(bestConf);
-        clearTimers();
-        setStatus("idle");
+        // Detach the recognizer before executing or speaking a reply. Late
+        // events must never submit a second command or capture our own TTS.
+        cancelListening();
         onFinalTranscriptRef.current?.(trimmedFinal, bestConf);
       }
     };
 
     recognition.onerror = (event) => {
       if (recognitionRef.current !== recognition) return;
-      clearTimers();
+      cancelListening();
       if (event.error === "aborted") {
         setStatus("idle");
         return;
       }
       setError(getFriendlyErrorMessage(event.error, lang));
       setStatus("error");
+      onFailureRef.current?.(event.error);
     };
 
     recognition.onend = () => {
@@ -304,26 +316,32 @@ export function useVoice(options: UseVoiceOptions = {}) {
       recognitionRef.current = null;
       setInterimTranscript("");
       if (!finalCapturedRef.current && latestTranscriptRef.current.trim()) {
-        finalCapturedRef.current = true;
-        const fallbackText = latestTranscriptRef.current.trim();
-        setTranscript(fallbackText);
-        setStatus("idle");
-        onFinalTranscriptRef.current?.(fallbackText, 0.8);
+        // An interim hypothesis isn't a confirmed transcript: don't mutate
+        // customer data based on a partial phrase after recognition stops.
+        setError(getFriendlyErrorMessage("unknown", lang));
+        setStatus("error");
+        return;
+      }
+      if (!finalCapturedRef.current) {
+        setError(getFriendlyErrorMessage("no-speech", lang));
+        setStatus("error");
         return;
       }
       setStatus((prev) => (prev === "listening" ? "idle" : prev));
     };
 
     try {
+      setStatus("listening");
       recognition.start();
       return true;
     } catch {
-      clearTimers();
+      cancelListening();
       setError(getFriendlyErrorMessage("unknown", lang));
       setStatus("error");
+      onFailureRef.current?.("start-failed");
       return false;
     }
-  }, [cancelListening, clearTimers, lang, stopSpeaking]);
+  }, [cancelListening, clearTimers, kitchen, lang, stopSpeaking]);
 
   const speak = useCallback(
     (text: string, langOverride?: string): Promise<void> => {
@@ -331,17 +349,16 @@ export function useVoice(options: UseVoiceOptions = {}) {
         if (
           typeof window === "undefined" ||
           !("speechSynthesis" in window) ||
-          !text.trim()
+          !text.trim() ||
+          (!kitchen && document.documentElement.hasAttribute("data-kitchen-mode"))
         ) {
           resolve();
           return;
         }
 
         try {
-          window.speechSynthesis.cancel();
-          if (ttsSafetyTimerRef.current) {
-            clearTimeout(ttsSafetyTimerRef.current);
-          }
+          cancelListening();
+          stopSpeaking();
 
           const utterance = new SpeechSynthesisUtterance(text);
           const targetLocale = getSpeechLocale(langOverride ?? lang);
@@ -362,6 +379,10 @@ export function useVoice(options: UseVoiceOptions = {}) {
           const finish = () => {
             if (settled) return;
             settled = true;
+            utterance.onstart = null;
+            utterance.onend = null;
+            utterance.onerror = null;
+            finishSpeakingRef.current = null;
             if (ttsSafetyTimerRef.current) {
               clearTimeout(ttsSafetyTimerRef.current);
               ttsSafetyTimerRef.current = null;
@@ -373,6 +394,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
           utterance.onstart = () => setStatus("speaking");
           utterance.onend = finish;
           utterance.onerror = finish;
+          finishSpeakingRef.current = finish;
 
           setStatus("speaking");
           // Safety fallback in case browser speechSynthesis hangs without firing onend
@@ -384,13 +406,23 @@ export function useVoice(options: UseVoiceOptions = {}) {
         }
       });
     },
-    [lang]
+    [cancelListening, kitchen, lang, stopSpeaking]
   );
 
   const clearError = useCallback(() => {
     setError(null);
     setStatus((prev) => (prev === "error" ? "idle" : prev));
   }, []);
+
+  useEffect(() => {
+    if (kitchen) return;
+    const releaseAudio = () => {
+      cancelListening();
+      stopSpeaking();
+    };
+    window.addEventListener("kitchen-mode-start", releaseAudio);
+    return () => window.removeEventListener("kitchen-mode-start", releaseAudio);
+  }, [cancelListening, kitchen, stopSpeaking]);
 
   useEffect(() => {
     return () => {
@@ -412,7 +444,9 @@ export function useVoice(options: UseVoiceOptions = {}) {
       if (ttsSafetyTimerRef.current) {
         clearTimeout(ttsSafetyTimerRef.current);
       }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      const ownedSpeech = Boolean(finishSpeakingRef.current);
+      finishSpeakingRef.current?.();
+      if (ownedSpeech && "speechSynthesis" in window) {
         try {
           window.speechSynthesis.cancel();
         } catch {

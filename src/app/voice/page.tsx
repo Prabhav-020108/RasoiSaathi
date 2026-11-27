@@ -16,6 +16,7 @@ import type { TallyBreakdown } from "@/lib/tally";
 import { VoiceChat, type VoiceChatMessage } from "@/components/voice/VoiceChat";
 import { Waveform, type WaveformMode } from "@/components/voice/Waveform";
 import { VoiceStatus } from "@/components/voice/VoiceStatus";
+import { isVoiceShortcut } from "@/lib/voice-shortcuts";
 
 const fetcher = async (url: string) => {
   const res = await fetch(url);
@@ -89,6 +90,12 @@ function VoiceContent() {
   const lastDisambiguatedTextRef = useRef<string>("");
   const autoRunPromptRef = useRef<string | null>(null);
   const autoListenAttemptedRef = useRef(false);
+  const processingRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const customersList = useMemo(
     () =>
@@ -163,13 +170,20 @@ function VoiceContent() {
     speak,
     stopSpeaking,
     clearError,
+    cancelListening,
   } = voice;
 
   const handleSubmitCommand = useCallback(
     async (rawText: string) => {
-      const trimmed = rawText.trim();
-      if (!trimmed || processing) return;
+      const raw = rawText.trim();
+      const trimmed = lastDisambiguatedTextRef.current && /^\d{4}$/.test(raw)
+        ? `${lastDisambiguatedTextRef.current} ${raw}`
+        : raw;
+      if (!trimmed || processingRef.current) return;
+      processingRef.current = true;
 
+      cancelListening();
+      stopSpeaking();
       setTextInput("");
       clearError();
       setMessages((prev) => [
@@ -188,6 +202,10 @@ function VoiceContent() {
           tier: aiTier,
           customers: customersList,
         });
+        if (res.actionPerformed) {
+          await globalMutate((key) => typeof key === "string" && key.startsWith("/api/")).catch(() => undefined);
+        }
+        if (!mountedRef.current) return;
 
         if (res.needsDisambiguation) {
           lastDisambiguatedTextRef.current = trimmed;
@@ -212,23 +230,16 @@ function VoiceContent() {
           candidates: res.candidates,
           tally: (res.tally as TallyBreakdown) ?? null,
           pendingCustomers,
+          broadcastId: typeof res.data?.broadcastId === "string" ? res.data.broadcastId : undefined,
         };
 
         setMessages((prev) => [...prev, assistantMsg]);
-
-        if (res.actionPerformed) {
-          await Promise.all([
-            globalMutate("/api/tally"),
-            globalMutate("/api/customers"),
-            globalMutate("/api/payments"),
-            globalMutate("/api/messages"),
-          ]);
-        }
 
         if (autoSpeak && res.responseText) {
           void speak(res.responseText, lang);
         }
       } catch (err) {
+        if (!mountedRef.current) return;
         const msg = err instanceof Error ? err.message : "Could not process command";
         showToast(msg, "error");
         setMessages((prev) => [
@@ -244,10 +255,11 @@ function VoiceContent() {
           },
         ]);
       } finally {
-        setProcessing(false);
+        processingRef.current = false;
+        if (mountedRef.current) setProcessing(false);
       }
     },
-    [aiTier, autoSpeak, clearError, customersList, lang, processing, showToast, speak]
+    [aiTier, autoSpeak, cancelListening, clearError, customersList, lang, showToast, speak, stopSpeaking]
   );
 
   handleSubmitCommandRef.current = handleSubmitCommand;
@@ -272,6 +284,22 @@ function VoiceContent() {
       startListening();
     }
   }, [isSTTSupported, searchParams, startListening]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isVoiceShortcut(event, "Escape")) {
+        event.preventDefault();
+        cancelListening();
+        stopSpeaking();
+      } else if (isVoiceShortcut(event, "m") && !processingRef.current) {
+        event.preventDefault();
+        if (voiceStatus === "listening") stopListening();
+        else startListening();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [cancelListening, startListening, stopListening, stopSpeaking, voiceStatus]);
 
   const handleSelectCandidate = (candidateName: string, phoneLast4: string) => {
     const base = lastDisambiguatedTextRef.current;
@@ -312,28 +340,24 @@ function VoiceContent() {
   const samplePrompts = getSamplePrompts(lang);
 
   return (
-    <div className="min-h-full flex flex-col">
+    <div className="h-full min-h-0 flex flex-col">
       <Header
-        title="🎤 RasoiSaathi Voice"
-        subtitle="Hands-free kitchen companion"
+        title="Voice"
         rightSlot={
-          <Link href="/">
-            <Button variant="outline" size="sm" className="rounded-full">
-              <ArrowLeft className="w-4 h-4" />
-              Back
-            </Button>
+          <Link href="/" aria-label="Back to dashboard" className="w-12 h-12 rounded-full border border-orange-200 bg-white flex items-center justify-center">
+            <ArrowLeft className="w-4 h-4" />
           </Link>
         }
       />
 
-      <div className="px-4 space-y-3 flex-1 pb-4 flex flex-col">
+      <div className="px-4 gap-3 flex-1 min-h-0 pb-2 flex flex-col">
         {!voice.isSTTSupported && (
           <div className="rounded-2xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-xs text-amber-900">
             Voice mic works best in Chrome/Edge. Text command mode below is fully active!
           </div>
         )}
 
-        <div className="flex-1 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3" aria-label="Voice conversation" role="log" aria-live="polite">
           <VoiceChat
             messages={messages}
             onReplay={(txt) => void voice.speak(txt, lang)}
@@ -341,8 +365,8 @@ function VoiceContent() {
           />
         </div>
 
-        <Card className="border-violet-200 bg-gradient-to-br from-white to-violet-50/70 sticky bottom-2">
-          <CardContent className="p-4 space-y-3">
+        <Card className="shrink-0 border-violet-200 bg-gradient-to-br from-white to-violet-50/70">
+          <CardContent className="p-3 space-y-2">
             <VoiceStatus
               mode={waveformMode}
               elapsedSeconds={voice.elapsedSeconds}
@@ -367,6 +391,7 @@ function VoiceContent() {
                 type="button"
                 onClick={handleMicToggle}
                 disabled={processing}
+                aria-keyshortcuts="M"
                 aria-label={
                   voice.status === "listening"
                     ? "Stop listening"
@@ -390,14 +415,15 @@ function VoiceContent() {
               </button>
             </div>
 
-            <div className="flex flex-wrap gap-1.5 justify-center">
-              {samplePrompts.map((prompt) => (
+            <p className="text-center text-xs text-stone-500">M: microphone · Esc: stop</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {samplePrompts.slice(0, 2).map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
                   disabled={processing}
                   onClick={() => void handleSubmitCommand(prompt)}
-                  className="rounded-full bg-white border border-violet-200 px-3 py-1.5 text-xs font-semibold text-[#7C3AED] hover:bg-violet-50 active:scale-95 transition-transform disabled:opacity-50"
+                  className="min-h-[48px] rounded-2xl bg-white border border-violet-200 px-2 py-1.5 text-xs font-semibold text-[#7C3AED] hover:bg-violet-50 active:scale-95 transition-transform disabled:opacity-50"
                 >
                   {prompt}
                 </button>

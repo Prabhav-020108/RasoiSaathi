@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import Link from "next/link";
 import { CheckCircle2, Sparkles, Volume2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { AITier } from "@/lib/ai-provider";
@@ -20,6 +21,7 @@ export interface VoiceChatMessage {
   candidates?: Array<{ id: string; name: string; phoneLast4: string }>;
   tally?: TallyBreakdown | null;
   pendingCustomers?: Array<{ name: string; remaining: number }>;
+  broadcastId?: string;
 }
 
 interface VoiceChatProps {
@@ -59,6 +61,12 @@ export function VoiceChat({
               </span>
               <div className="min-w-0 flex-1">
                 <p className="whitespace-pre-wrap">{m.text}</p>
+                {m.broadcastId && (
+                  <Link href={`/menu?broadcast=${encodeURIComponent(m.broadcastId)}`}
+                    className="mt-2 inline-flex items-center min-h-[48px] text-violet-700 font-semibold underline">
+                    Open menu previews
+                  </Link>
+                )}
 
                 {m.actionPerformed && m.actionSummary && (
                   <div className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-green-50 border border-green-200 px-2.5 py-1 text-xs font-bold text-[#16A34A]">
