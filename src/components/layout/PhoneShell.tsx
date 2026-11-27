@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { BottomNav } from "./BottomNav";
 import { MicButton } from "./MicButton";
 import { AISetupModal } from "@/components/ai/AISetupModal";
+import { KitchenMode } from "@/components/voice/KitchenMode";
 
 export function PhoneShell({ children }: { children: React.ReactNode }) {
   const isVoicePage = usePathname() === "/voice";
@@ -15,6 +16,8 @@ export function PhoneShell({ children }: { children: React.ReactNode }) {
         <div className="hidden lg:flex items-center justify-center pt-2.5 pb-1 bg-orange-100/70 shrink-0">
           <div className="w-20 h-1.5 rounded-full bg-stone-900/20" />
         </div>
+
+        <KitchenMode />
 
         {/* Scrollable screen body */}
         <main className={`flex-1 min-h-0 overflow-y-auto phone-scroll ${isVoicePage ? "pb-20" : "pb-28"}`}>
