@@ -20,18 +20,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApp } from "@/components/providers/AppProvider";
 import { SUPPORTED_LANGUAGES } from "@/lib/utils";
+import { inboxAction, readInboxMessage, type InboxMessage } from "@/lib/inbox-client";
+import { kitchenCopy } from "@/lib/kitchen-language";
 
-interface MessageItem {
-  id: string;
-  senderName: string;
-  originalText: string;
-  originalLang: string;
-  translatedText: string | null;
-  translatedLang: string | null;
+interface MessageItem extends InboxMessage {
   intent: string | null;
-  status: string;
-  autoReply: string | null;
-  createdAt?: string;
 }
 
 const fetcher = async (url: string) => {
@@ -41,7 +34,7 @@ const fetcher = async (url: string) => {
 };
 
 export default function MessagesPage() {
-  const { dict, aiTier, showToast } = useApp();
+  const { dict, aiTier, lang, showToast } = useApp();
   const { data, error, isLoading, mutate } = useSWR<{
     counts: { total: number; new: number; processed: number };
     messages: MessageItem[];
@@ -95,35 +88,20 @@ export default function MessagesPage() {
     }
   };
 
-  const handleProcessMessage = async (msg: MessageItem) => {
+  const handleProcessMessage = async (msg: MessageItem, action: "read" | "approve" | "approveReply") => {
     setActionError(null);
     setProcessingId(msg.id);
     try {
-      const res = await fetch(`/api/messages/${msg.id}/process`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          tierHint: aiTier === "basic" ? "basic" : undefined,
-        }),
-      });
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || "Failed to process message");
-      }
-      const result = (await res.json()) as {
-        actionPerformed?: boolean;
-        actionSummary?: string;
-      };
+      const result = action === "read" ? await readInboxMessage(msg, lang, aiTier)
+        : await inboxAction(msg.id, action, action === "approve" ? { proposal: msg.proposal } : {});
       if (result.actionSummary) {
         setActionSummaries((prev) => ({ ...prev, [msg.id]: result.actionSummary! }));
       }
       setExpandedIds((prev) => ({ ...prev, [msg.id]: true }));
       await Promise.all([mutate(), globalMutate("/api/tally")]);
       showToast(
-        result.actionSummary ? `✅ ${result.actionSummary}` : "Message processed!",
-        "success"
+        result.actionSummary || (action === "approveReply" ? kitchenCopy(lang).savedReply : kitchenCopy(lang).pending),
+        result.actionPerformed || action === "approveReply" ? "success" : "info"
       );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Failed to process message";
@@ -275,7 +253,7 @@ export default function MessagesPage() {
                         </Badge>
                       )}
                       <Badge variant={isProcessed ? "success" : "warning"}>
-                        {isProcessed ? dict.messages.processed : "new"}
+                        {isProcessed ? dict.messages.processed : msg.status === "review" ? "Review" : "New"}
                       </Badge>
                     </div>
                   </div>
@@ -305,11 +283,14 @@ export default function MessagesPage() {
 
                   {isExpanded && (
                     <div className="space-y-2">
-                      {msg.translatedText && msg.originalLang !== "hi" && (
+                      {msg.translatedText && msg.translatedLang === lang && (
                         <div className="flex items-start gap-2 rounded-2xl bg-orange-50/70 p-2.5 border border-orange-100 text-xs text-stone-700">
                           <Languages className="w-4 h-4 text-[#F97316] shrink-0 mt-0.5" />
                           <span>{msg.translatedText}</span>
                         </div>
+                      )}
+                      {msg.status === "review" && msg.originalLang !== lang && msg.translatedLang !== lang && (
+                        <p className="text-xs text-stone-600">{kitchenCopy(lang).unavailable}</p>
                       )}
 
                       {actionSummary && (
@@ -322,6 +303,10 @@ export default function MessagesPage() {
                       {msg.autoReply && (
                         <div className="rounded-2xl bg-teal-50 border border-teal-200 p-3 text-xs font-semibold text-teal-900">
                           💬 {dict.messages.autoReply}: {msg.autoReply}
+                          {msg.replyApprovedAt ? <p className="mt-2">Approved · simulated</p> : (
+                            <Button type="button" className="mt-2" disabled={isProcessing}
+                              onClick={() => handleProcessMessage(msg, "approveReply")}>Approve simulated reply</Button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -330,9 +315,9 @@ export default function MessagesPage() {
                   {!isProcessed && (
                     <Button
                       type="button"
-                      onClick={() => handleProcessMessage(msg)}
+                      onClick={() => handleProcessMessage(msg, msg.proposal ? "approve" : "read")}
                       disabled={isProcessing}
-                      aria-label={`${dict.messages.process} message from ${msg.senderName}`}
+                      aria-label={`${msg.proposal ? "Approve request" : "Review message"} from ${msg.senderName}`}
                       className="w-full min-h-[48px]"
                       variant="primary"
                     >
@@ -344,7 +329,7 @@ export default function MessagesPage() {
                       ) : (
                         <>
                           <Zap className="w-4 h-4" />
-                          <span>⚡ {dict.messages.process}</span>
+                          <span>{msg.proposal ? "Approve request" : "Review message"}</span>
                         </>
                       )}
                     </Button>

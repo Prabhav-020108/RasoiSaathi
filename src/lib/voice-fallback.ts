@@ -1,6 +1,7 @@
 export type FallbackIntent =
   | "tally"
   | "add_customer"
+  | "edit_customer"
   | "remove_customer"
   | "skip"
   | "cancel"
@@ -9,6 +10,7 @@ export type FallbackIntent =
   | "extra"
   | "diet_change"
   | "payment_check"
+  | "payment_record"
   | "payment_remind"
   | "menu_broadcast"
   | "greeting"
@@ -18,6 +20,8 @@ export interface ParsedEntities {
   customerName?: string;
   dietaryPref?: string;
   price?: number;
+  paymentAmount?: number;
+  deliveryNote?: string;
   extraItems?: string;
   date?: "today" | "tomorrow";
   days?: number;
@@ -108,7 +112,7 @@ export function extractDays(text: string): number | undefined {
 }
 
 export function extractDateRef(text: string): "today" | "tomorrow" {
-  if (/\b(kal|tomorrow|next\s+day|कल|ನಾಳೆ)\b/i.test(text)) {
+  if (/\b(kal|tomorrow|next\s+day)\b|कल|ನಾಳೆ|நாளை|రేపు|उद्या/i.test(text)) {
     return "tomorrow";
   }
   return "today";
@@ -246,6 +250,23 @@ export function keywordProcess(
   const days = extractDays(trimmed);
   const date = extractDateRef(trimmed);
   const language = extractLanguageCode(trimmed);
+  if (matchedName && /\b(delivery note|update price|change price)\b/i.test(lower)) {
+    const note = trimmed.match(/delivery note\s*(?::|to)\s*(.+)/i)?.[1];
+    return { intent: "edit_customer", entities: {
+      customerName: matchedName, price, deliveryNote: note,
+    }, confidence: 0.9 };
+  }
+
+  // A dictated menu may mention "extra", "Jain", or a customer's name.
+  // An explicit menu command takes precedence over individual order changes.
+  if (/\bmenu\b|मेनू|मेनु|ಮೆನು|மெனு|మెనూ/i.test(lower) &&
+    !/^(read|what|show|when|who)\b|[?？]$/i.test(lower)) {
+    return {
+      intent: "menu_broadcast",
+      entities: { menuText: trimmed.replace(/^.*?[:：]\s*/, "") || trimmed },
+      confidence: 0.82,
+    };
+  }
 
   // 1. Morning tally check
   if (
@@ -253,6 +274,7 @@ export function keywordProcess(
     lower.includes("kitna tiffin") ||
     /\bkitne\s+.*\b(tiffin|khane)\b/i.test(lower) ||
     lower.includes("how many") ||
+    /कितने.*(?:टिफिन|डबे)|ಎಷ್ಟು.*(?:ಟಿಫಿನ್|ಊಟ)|எத்தனை.*(?:டிபன்|உணவு)|ఎన్ని.*(?:టిఫిన్|భోజన)|किती.*(?:डबे|टिफिन)|who.*extra/i.test(lower) ||
     lower.includes("tally") ||
     lower.includes("aaj ka order") ||
     lower.includes("total tiffin") ||
@@ -314,8 +336,20 @@ export function keywordProcess(
     lower.includes("hasn't paid") ||
     lower.includes("not paid") ||
     lower.includes("ಬಾಕಿ") ||
-    lower.includes("ಪಾವತಿ")
+    lower.includes("ಪಾವತಿ") ||
+    /भुगतान|பாக்கி|బాకీ|थकबाकी/.test(lower) ||
+    /\bmark\b.*\bpaid\b/i.test(lower)
   ) {
+    if (/\b(mark\b.*\bpaid|received|payment\s+(?:aa\s+gaya|mil\s+gaya|aaya)|paid\s+(?:mark|karo|kar\s*do))\b/i.test(lower) &&
+        !/[?]|\b(not|nahi|nahin|hasn't|haven't|unpaid|who|has|have|did|kya|kisne)\b/i.test(lower)) {
+      const withoutPhoneSuffix = lower.replace(/\b\d{4}\b/g, (digits) =>
+        knownCustomers.some((c) => c.phone?.replace(/\D/g, "").endsWith(digits)) ? "" : digits
+      );
+      if (/\b(partial|part|advance)\b|(?:₹|rs\.?|inr)\s*\d|\b\d{3,5}\b/i.test(withoutPhoneSuffix)) {
+        return { intent: "unknown", entities: {}, confidence: 0.4 };
+      }
+      return { intent: "payment_record", entities: { customerName: matchedName }, confidence: 0.82 };
+    }
     if (lower.includes("remind") || lower.includes("bhejo") || lower.includes("yaad")) {
       return {
         intent: "payment_remind",
@@ -435,7 +469,7 @@ export function keywordProcess(
   }
 
   // 11. Menu broadcast
-  if (lower.includes("menu") || lower.includes("sabji") || lower.includes("khana")) {
+  if (/\b(sabji|khana)\b/i.test(lower) && !/^(read|what|show|when|who)\b|[?？]$/i.test(lower)) {
     return {
       intent: "menu_broadcast",
       entities: { menuText: trimmed },

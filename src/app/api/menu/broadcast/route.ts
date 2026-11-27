@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { buildMenuTranslations, parseTranslationsJson } from "@/lib/menu-broadcast";
+import { buildMenuTranslations, parseTranslationsJson, readLocalMenuTranslations } from "@/lib/menu-broadcast";
 import { getTodayUTC } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +54,6 @@ export async function POST(request: NextRequest) {
 
     const fullMenuText = jainNote ? `${menuText}\n${jainNote}` : menuText;
 
-
     const [cook, activeCustomers] = await Promise.all([
       prisma.cook.findFirst(),
       prisma.customer.findMany({
@@ -71,7 +70,9 @@ export async function POST(request: NextRequest) {
     const translationsMap = await buildMenuTranslations(
       fullMenuText,
       cookLang,
-      targetLanguages
+      targetLanguages,
+      undefined,
+      readLocalMenuTranslations(body.localTranslations)
     );
 
     const tomorrowUTC = new Date(getTodayUTC().getTime() + 24 * 60 * 60 * 1000);

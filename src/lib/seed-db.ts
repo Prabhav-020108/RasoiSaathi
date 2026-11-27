@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { getTodayUTC, getCurrentMonthKey } from "./kitchen-date";
 
 export const DEMO_COOK = {
   name: "Sunita Devi",
@@ -211,10 +212,8 @@ export async function seedDatabase(
   });
 
   const now = new Date();
-  const todayUTC = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  );
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const todayUTC = getTodayUTC(now);
+  const currentMonth = getCurrentMonthKey(now);
   const pauseUntil = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
 
   const customerIdByName = new Map<string, string>();

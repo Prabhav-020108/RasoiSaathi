@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { getDailyTally } from "./tally";
-import { getCurrentMonthKey } from "./utils";
+import { getCurrentMonthKey, getTodayUTC, SUPPORTED_LANGUAGES } from "./utils";
 import { geminiProcess, geminiTranslate, resolveGeminiKey, type GeminiVoiceContext } from "./gemini";
 import { executeVoiceIntent } from "./voice-actions";
 import { keywordProcess, type FallbackIntent, type ParsedCommand } from "./voice-fallback";
@@ -70,11 +70,89 @@ export interface ProcessMessageResult {
   actionPerformed: boolean;
   actionSummary?: string;
   tierUsed: "gemini" | "local" | "basic";
+  spokenSummary?: string;
+  replyMeaning?: string;
+}
+
+interface MessageProposal {
+  parsed: ParsedCommand;
+  customerId: string;
+  orderDay: string;
+  tierUsed: ProcessMessageResult["tierUsed"];
+}
+
+function datedSkipReply(lang: string, day: string) {
+  lang = SUPPORTED_LANGUAGES.some(({ code }) => code === lang) ? lang : "en";
+  const date = new Intl.DateTimeFormat(`${lang}-IN`, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(day));
+  return ({
+    en: `Your tiffin for ${date} has been skipped.`,
+    hi: `${date} का आपका टिफ़िन नहीं भेजा जाएगा।`,
+    kn: `${date} ರಂದು ನಿಮ್ಮ ಟಿಫಿನ್ ಕಳುಹಿಸುವುದಿಲ್ಲ.`,
+    ta: `${date} அன்று உங்கள் டிபன் அனுப்பப்படாது.`,
+    te: `${date} న మీ టిఫిన్ పంపబడదు.`,
+    mr: `${date} रोजी तुमचा डबा पाठवला जाणार नाही.`,
+  })[lang] ?? `Your tiffin for ${date} has been skipped.`;
+}
+
+function skipProposalSummary(lang: string, day: string) {
+  lang = SUPPORTED_LANGUAGES.some(({ code }) => code === lang) ? lang : "en";
+  const date = new Intl.DateTimeFormat(`${lang}-IN`, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(day));
+  return ({
+    en: `Request to skip the tiffin on ${date}.`,
+    hi: `${date} का टिफ़िन रोकने का अनुरोध।`,
+    kn: `${date} ರ ಟಿಫಿನ್ ಬೇಡ ಎಂಬ ವಿನಂತಿ.`,
+    ta: `${date} அன்று டிபன் வேண்டாம் என்ற கோரிக்கை.`,
+    te: `${date} న టిఫిన్ వద్దన్న అభ్యర్థన.`,
+    mr: `${date} रोजी डबा नको अशी विनंती.`,
+  })[lang] ?? `Request to skip the tiffin on ${date}.`;
+}
+
+function acknowledgedReply(lang: string) {
+  return ({
+    ta: "உங்கள் செய்தி கிடைத்தது.",
+    te: "మీ సందేశం అందింది.",
+    mr: "तुमचा संदेश मिळाला.",
+  })[lang] ?? getAutoReplyForIntent("unknown", lang);
+}
+
+export async function approveMessageRecord(id: string, reviewedProposal?: string): Promise<ProcessMessageResult | null> {
+  return prisma.$transaction(async (db) => {
+    const message = await db.message.findUnique({ where: { id } });
+    if (!message) return null;
+    const outcome: ProcessMessageResult = {
+      message, alreadyProcessed: message.status === "processed", actionPerformed: false, tierUsed: "basic",
+    };
+    if (outcome.alreadyProcessed || !message.proposal ||
+        (reviewedProposal !== undefined && reviewedProposal !== message.proposal)) return outcome;
+    const proposal: MessageProposal = JSON.parse(message.proposal);
+    const orderDay = new Date(proposal.orderDay);
+    if (orderDay < getTodayUTC()) return outcome;
+    const customer = await db.customer.findUnique({ where: { id: proposal.customerId } });
+    if (!customer) return outcome;
+    const cook = await db.cook.findUnique({ where: { id: customer.cookId } });
+    const result = await executeVoiceIntent({
+      ...proposal.parsed,
+      entities: { ...proposal.parsed.entities, customerName: customer.name },
+    }, {
+      db, customerId: customer.id, orderDay, cookLang: cook?.language ?? "hi",
+      tierUsed: proposal.tierUsed, originalText: message.originalText,
+    });
+    if (!result.actionPerformed) return outcome;
+    const autoReply = proposal.parsed.intent === "skip"
+      ? datedSkipReply(message.originalLang, proposal.orderDay)
+      : acknowledgedReply(message.originalLang);
+    outcome.message = await db.message.update({
+      where: { id }, data: { status: "processed", autoReply, replyApprovedAt: null },
+    });
+    return {
+      ...outcome, actionPerformed: true, actionSummary: result.actionSummary, tierUsed: proposal.tierUsed,
+      replyMeaning: proposal.parsed.intent === "skip" ? datedSkipReply(cook?.language ?? "hi", proposal.orderDay) : undefined,
+    };
+  });
 }
 
 /**
- * Processes an incoming WhatsApp message through the 3-tier AI pipeline,
- * applies any actionable DB update for the matched customer, and saves an auto-reply.
+ * Reads and prepares a reviewable proposal. Business updates require approval.
  */
 export async function processMessageRecord(
   messageId: string,
@@ -82,6 +160,7 @@ export async function processMessageRecord(
     apiKeyOverride?: string | null;
     tierHint?: string;
     localParsed?: ParsedCommand | null;
+    localTranslation?: string;
   } = {}
 ): Promise<ProcessMessageResult | null> {
   const existing = await prisma.message.findUnique({
@@ -133,7 +212,7 @@ export async function processMessageRecord(
         cookName: cook?.name || "Sunita Devi",
         cookLang,
         defaultPrice: cook?.defaultPrice ?? 3000,
-        todayISO: new Date().toISOString().slice(0, 10),
+        todayISO: getTodayUTC(existing.createdAt).toISOString().slice(0, 10),
         customers: customers.map((c) => ({
           id: c.id,
           name: c.name,
@@ -174,65 +253,59 @@ export async function processMessageRecord(
     tierUsed = "basic";
   }
 
-  // Ensure sender name is used when the message text omits the customer's own name
-  if (!parsed.entities.customerName) {
-    parsed = {
-      ...parsed,
-      entities: {
-        ...parsed.entities,
-        customerName: existing.customer?.name || existing.senderName,
-      },
-    };
+  const tomorrow = /\btomorrow\b|\bkal\b|कल|ನಾಳೆ|நாளை|రేపు|उद्या/i.test(existing.originalText);
+  const today = /\btoday\b|\baaj\b|आज|ಇಂದು|இன்று|ఈరోజు/i.test(existing.originalText);
+  const date = today === tomorrow ? undefined : tomorrow ? "tomorrow" : "today";
+  const clearHindiSkip = /^(आज|कल)( मेरा)? टिफ़?िन (मत भेजना|नहीं चाहिए)[।.!]?$/i.test(existing.originalText.trim());
+  if (clearHindiSkip && date) {
+    parsed = { intent: "skip", confidence: 0.95, entities: { date } };
   }
-
-  let translatedText = existing.translatedText;
-  let translatedLang = existing.translatedLang;
-  if (existing.originalLang !== "en" && existing.originalLang !== "hi" && geminiKey) {
+  let translatedText: string | null = null;
+  if (existing.originalLang !== cookLang && geminiKey) {
     try {
-      const tr = await geminiTranslate(existing.originalText, existing.originalLang, "hi", geminiKey);
-      translatedText = tr.translated;
-      translatedLang = "hi";
+      const tr = await geminiTranslate(existing.originalText, existing.originalLang, cookLang, geminiKey);
+      if (tr.translated.trim() !== existing.originalText.trim()) translatedText = tr.translated;
     } catch {
-      // Keep existing or null if translation fails
+      // A missing translation remains visibly unavailable.
     }
+  } else if (existing.originalLang !== cookLang && options.localTranslation &&
+      options.localTranslation.trim() !== existing.originalText.trim()) {
+    translatedText = options.localTranslation.trim().slice(0, 4000);
   }
 
-  let actionPerformed = false;
-  let actionSummary: string | undefined;
-
-  if (ACTIONABLE_INTENTS.has(parsed.intent)) {
-    const actionResult = await executeVoiceIntent(parsed, {
-      cookLang,
-      tierUsed,
-      originalText: existing.originalText,
-    });
-    actionPerformed = actionResult.actionPerformed;
-    actionSummary = actionResult.actionSummary;
-  }
-
-  const autoReply = getAutoReplyForIntent(parsed.intent, existing.originalLang);
-
-  const updated = await prisma.message.update({
-    where: { id: existing.id },
+  const senderMatches = customers.filter((customer) => customer.name.toLowerCase() === existing.senderName.toLowerCase());
+  const customerId = existing.customerId ?? (senderMatches.length === 1 ? senderMatches[0].id : undefined);
+  const needsDay = ["skip", "cancel", "extra"].includes(parsed.intent);
+  const orderDay = getTodayUTC(existing.createdAt);
+  if (date === "tomorrow") orderDay.setUTCDate(orderDay.getUTCDate() + 1);
+  const proposal = customerId && ACTIONABLE_INTENTS.has(parsed.intent) && parsed.confidence >= 0.6 &&
+    (!needsDay || date) && !parsed.entities.permanent &&
+    (parsed.intent !== "extra" || parsed.entities.extraItems) &&
+    (parsed.intent !== "diet_change" || parsed.entities.dietaryPref)
+    ? JSON.stringify({
+        parsed: { ...parsed, entities: { ...parsed.entities, date } }, customerId,
+        orderDay: orderDay.toISOString(), tierUsed,
+      } satisfies MessageProposal)
+    : null;
+  await prisma.message.updateMany({
+    where: { id: existing.id, status: { in: ["new", "review"] } },
     data: {
       intent: parsed.intent,
       translatedText,
-      translatedLang: translatedText ? translatedLang || "hi" : null,
-      status: "processed",
-      autoReply,
-    },
-    include: {
-      customer: {
-        select: { id: true, name: true, language: true, dietaryPref: true },
-      },
+      translatedLang: translatedText ? cookLang : null,
+      status: "review",
+      readAt: existing.readAt ?? new Date(),
+      proposal,
     },
   });
 
   return {
-    message: updated,
+    message: await prisma.message.findUniqueOrThrow({ where: { id: existing.id } }),
     alreadyProcessed: false,
-    actionPerformed,
-    actionSummary,
+    actionPerformed: false,
     tierUsed,
+    spokenSummary: proposal && parsed.intent === "skip" &&
+      (clearHindiSkip || /^(please )?skip (my tiffin )?(today|tomorrow)\b/i.test(existing.originalText))
+      ? skipProposalSummary(cookLang, orderDay.toISOString()) : undefined,
   };
 }

@@ -1,4 +1,5 @@
 import { geminiTranslate, resolveGeminiKey } from "./gemini";
+import { SUPPORTED_LANGUAGES } from "./utils";
 
 export const JAIN_NOTE_DEFAULT = "Jain version: without onion-garlic, with extra paneer";
 
@@ -10,7 +11,8 @@ export async function buildMenuTranslations(
   menuText: string,
   cookLang: string,
   targetLanguages: string[],
-  apiKeyOverride?: string | null
+  apiKeyOverride?: string | null,
+  localTranslations?: Record<string, string>
 ): Promise<Record<string, string>> {
   const uniqueLangs = Array.from(new Set([cookLang, ...targetLanguages].filter(Boolean)));
   const apiKey = resolveGeminiKey(apiKeyOverride);
@@ -24,6 +26,10 @@ export async function buildMenuTranslations(
       }
 
       if (!apiKey) {
+        if (localTranslations?.[lang] && localTranslations[lang].trim() !== menuText.trim()) {
+          translations[lang] = localTranslations[lang];
+          return;
+        }
         translations[lang] = `${menuText} (Original - translate with Gemini API)`;
         return;
       }
@@ -38,6 +44,15 @@ export async function buildMenuTranslations(
   );
 
   return translations;
+}
+
+export function readLocalMenuTranslations(raw: unknown) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const data = raw as Record<string, unknown>;
+  return Object.fromEntries(SUPPORTED_LANGUAGES.flatMap(({ code }) => {
+    const value = data[code];
+    return typeof value === "string" && value.trim() ? [[code, value.trim().slice(0, 4000)]] : [];
+  })) as Record<string, string>;
 }
 
 /**

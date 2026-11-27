@@ -1,0 +1,50 @@
+{
+  "appName": "RasoiSaathi",
+  "greeting": "नमस्कार",
+  "didi": "ताई",
+  "todayTiffin": "आजचे डबे",
+  "total": "एकूण",
+  "regular": "नेहमीचे",
+  "jain": "जैन",
+  "lessOil": "कमी तेलाचे",
+  "noOnionGarlic": "कांदा-लसूण विरहित",
+  "skipped": "वगळले",
+  "paused": "स्थगित",
+  "cancelled": "रद्द",
+  "extra": "अतिरिक्त",
+  "pending": "बाकी",
+  "collected": "जमा",
+  "newMessages": "नवीन संदेश",
+  "recentUpdates": "नवीन बदल",
+  "quickActions": "झटपट कृती",
+  "talkToRasoiSaathi": "रसोई साथीशी बोला",
+  "tapMicHint": "बोलण्यासाठी माइक दाबा",
+  "nav": { "home": "मुख्य", "customers": "ग्राहक", "payments": "हिशेब", "menu": "मेनू", "settings": "सेटिंग्ज" },
+  "customers": {
+    "title": "ग्राहक", "add": "जोडा", "searchPlaceholder": "नाव किंवा फोन शोधा",
+    "all": "सर्व", "active": "सक्रिय", "paused": "स्थगित", "cancelled": "रद्द",
+    "paid": "भरले", "pending": "बाकी", "perMonth": "/महिना", "empty": "ग्राहक सापडले नाहीत"
+  },
+  "settings": {
+    "title": "सेटिंग्ज", "language": "भाषा", "aiSetup": "एआय सेवा", "cookProfile": "स्वयंपाकी प्रोफाइल",
+    "business": "व्यवसाय सेटिंग्ज", "data": "नमुना डेटा", "save": "बदल जतन करा",
+    "saved": "सेटिंग्ज जतन झाल्या", "exportData": "डेटा निर्यात", "resetDemo": "नमुना डेटा पुन्हा भरा"
+  },
+  "aiBanner": {
+    "notConfiguredTitle": "एआय की सेट केलेली नाही",
+    "notConfiguredDesc": "तुम्ही स्थानिक एआय किंवा मूलभूत मोड वापरू शकता.",
+    "setupLocal": "स्थानिक एआय सुरू करा", "skipBasic": "मूलभूत मोड"
+  },
+  "messages": {
+    "title": "व्हॉट्सॲप संदेश", "simulate": "नमुना संदेश", "senderName": "पाठवणाऱ्याचे नाव",
+    "messageText": "संदेश", "send": "पाठवा", "process": "पहा", "processing": "तपासत आहे…",
+    "processed": "पूर्ण", "intent": "विनंती", "autoReply": "सुचवलेले उत्तर",
+    "actionTaken": "केलेली कृती", "expand": "दाखवा", "collapse": "लपवा"
+  },
+  "menu": {
+    "title": "मेनू प्रसारण", "subtitle": "एकदा बोला, सर्वांसाठी भाषांतर करा", "menuText": "उद्याचा मेनू",
+    "jainNote": "जैन सूचना जोडा", "translateAndPreview": "भाषांतर आणि पूर्वावलोकन",
+    "translating": "भाषांतर सुरू आहे…", "copyText": "कॉपी", "copied": "कॉपी झाले",
+    "broadcastFor": "या दिवसासाठी", "pastBroadcasts": "मागील मेनू", "noBroadcasts": "अजून प्रसारण नाही"
+  }
+}

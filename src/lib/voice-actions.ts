@@ -2,6 +2,10 @@ import { prisma } from "./prisma";
 import { getDailyTally, type TallyBreakdown } from "./tally";
 import { getCurrentMonthKey, getDietaryLabel, getTodayUTC } from "./utils";
 import type { FallbackIntent, ParsedCommand } from "./voice-fallback";
+import { buildMenuTranslations } from "./menu-broadcast";
+import { recordReceipt } from "./payment-receipts";
+import { getDictionary } from "../i18n";
+import { kitchenCopy } from "./kitchen-language";
 
 export interface CustomerMatchCandidate {
   id: string;
@@ -84,6 +88,12 @@ function formatTallySpeech(
   const { activeTiffins, dietary, skippedCount, cancelledCount, pausedCount, extraCount, extraRequests } =
     tally;
   const isTomorrow = dateRef === "tomorrow";
+  if (["ta", "te", "mr"].includes(lang)) {
+    const dict = getDictionary(lang);
+    const day = { ta: isTomorrow ? "நாளை" : "இன்று", te: isTomorrow ? "రేపు" : "ఈరోజు", mr: isTomorrow ? "उद्या" : "आज" }[lang];
+    const extras = extraRequests.map((entry) => `${entry.customerName}, ${entry.items}`).join(". ");
+    return `${day}. ${dict.todayTiffin.split(" ").slice(-1)[0]} ${activeTiffins}. ${dietary.regular} ${dict.regular}, ${dietary.jain} ${dict.jain}, ${dietary.lessOil} ${dict.lessOil}, ${dietary.noOnionGarlic} ${dict.noOnionGarlic}. ${dict.skipped} ${skippedCount + cancelledCount}. ${dict.paused} ${pausedCount}. ${dict.extra} ${extraCount}. ${extras}`;
+  }
 
   if (activeTiffins === 0 && tally.totalCustomers > 0) {
     if (lang === "en") {
@@ -158,6 +168,10 @@ function formatPendingPaymentsSpeech(
   totalPending: number,
   lang: string
 ): string {
+  if (["ta", "te", "mr"].includes(lang)) {
+    const dict = getDictionary(lang);
+    return `${dict.pending} ₹${totalPending}. ${pendingList.map((p) => `${p.name}, ₹${p.remaining}`).join(". ")}`;
+  }
   if (pendingList.length === 0) {
     if (lang === "en") return "Great news! All customers have paid for this month.";
     if (lang === "kn") return "ಶುಭ ಸುದ್ದಿ! ಈ ತಿಂಗಳು ಎಲ್ಲಾ ಗ್ರಾಹಕರ ಪಾವತಿ ಪೂರ್ಣವಾಗಿದೆ.";
@@ -218,15 +232,21 @@ export async function executeVoiceIntent(
     cookLang: string;
     tierUsed: "gemini" | "local" | "basic";
     originalText: string;
+    db?: import("@prisma/client").Prisma.TransactionClient;
+    customerId?: string;
+    orderDay?: Date;
+    receiptId?: string;
+    expectedBalance?: number;
+    reminderPaymentIds?: string[];
   }
 ): Promise<VoiceActionResult> {
-  const { cookLang, tierUsed } = options;
+  const { cookLang, tierUsed, db = prisma } = options;
   const intent = parsed.intent;
   const entities = parsed.entities ?? {};
 
-  let cook = await prisma.cook.findFirst();
+  let cook = await db.cook.findFirst();
   if (!cook) {
-    cook = await prisma.cook.create({
+    cook = await db.cook.create({
       data: {
         name: "Sunita Devi",
         phone: "+91 98765 43210",
@@ -236,11 +256,11 @@ export async function executeVoiceIntent(
     });
   }
 
-  const allCustomers = await prisma.customer.findMany({
+  const allCustomers = await db.customer.findMany({
     orderBy: { createdAt: "asc" },
   });
 
-  const candidatesPool: CustomerMatchCandidate[] = allCustomers.map((c) => ({
+  const candidatesPool: CustomerMatchCandidate[] = allCustomers.filter((c) => !options.customerId || c.id === options.customerId).map((c) => ({
     id: c.id,
     name: c.name,
     phone: c.phone,
@@ -252,23 +272,26 @@ export async function executeVoiceIntent(
 
   const currentMonth = getCurrentMonthKey();
   const todayUTC = getTodayUTC();
-  const targetDate =
+  const targetDate = options.orderDay ?? (
     entities.date === "tomorrow"
       ? new Date(todayUTC.getTime() + 24 * 60 * 60 * 1000)
-      : todayUTC;
+      : todayUTC);
 
   // Helper to return result with fresh tally
   const buildResult = async (partial: Omit<VoiceActionResult, "tally">) => {
-    const tally = await getDailyTally();
+    const tally = await getDailyTally(undefined, db);
     return { ...partial, tally };
   };
 
   switch (intent) {
     case "tally": {
-      const tally = await getDailyTally(entities.date === "tomorrow" ? targetDate : undefined);
-      const responseText =
-        tierUsed !== "basic" && parsed.responseText && entities.date !== "tomorrow"
-          ? parsed.responseText
+      const tally = await getDailyTally(entities.date === "tomorrow" ? targetDate : undefined, db);
+      const dict = getDictionary(cookLang);
+      const query = options.originalText;
+      const responseText = /who.*extra|extra.*(?:who|किसको)|ಹೆಚ್ಚುವರಿ.*ಯಾರಿಗೆ/i.test(query)
+        ? `${dict.extra} ${tally.extraCount}. ${tally.extraRequests.map((request) => `${request.customerName}, ${request.items}`).join(". ")}`
+        : /\bjain\b|जैन|ಜೈನ|ஜெயின்|జైన్/i.test(query)
+          ? `${new Intl.DateTimeFormat(`${cookLang}-IN`, { dateStyle: "medium", timeZone: "UTC" }).format(targetDate)}. ${dict.jain} ${tally.dietary.jain}.`
           : formatTallySpeech(tally, cookLang, entities.date);
       return {
         intent,
@@ -304,7 +327,7 @@ export async function executeVoiceIntent(
         entities.price && entities.price >= 100 ? Math.round(entities.price) : cook.defaultPrice;
       const customerLang = entities.language || cookLang || "hi";
 
-      const created = await prisma.customer.create({
+      const created = await db.customer.create({
         data: {
           cookId: cook.id,
           name,
@@ -341,6 +364,27 @@ export async function executeVoiceIntent(
       });
     }
 
+    case "edit_customer": {
+      const matches = resolveCustomerMatches(entities.customerName, options.originalText, candidatesPool);
+      if (matches.length !== 1 || (!entities.price && !entities.deliveryNote)) {
+        return buildResult({
+          intent, entities, confidence: parsed.confidence, actionPerformed: false,
+          needsDisambiguation: matches.length > 1,
+          candidates: matches.map(({ id, name, phoneLast4 }) => ({ id, name, phoneLast4 })),
+          responseText: matches.length > 1 ? disambiguationPrompt(entities.customerName ?? "", matches, cookLang)
+            : kitchenCopy(cookLang).retry,
+        });
+      }
+      const customer = await db.customer.update({
+        where: { id: matches[0].id },
+        data: { monthlyPrice: entities.price, specialNotes: entities.deliveryNote },
+      });
+      return buildResult({
+        intent, entities: { ...entities, customerName: customer.name }, confidence: parsed.confidence, actionPerformed: true,
+        responseText: `${customer.name}. ${entities.price ? `₹${customer.monthlyPrice}. ` : ""}${entities.deliveryNote ?? ""} ${getDictionary(cookLang).settings.saved}`,
+      });
+    }
+
     case "remove_customer": {
       const matches = resolveCustomerMatches(entities.customerName, options.originalText, candidatesPool);
       if (matches.length === 0) {
@@ -369,7 +413,7 @@ export async function executeVoiceIntent(
       }
 
       const target = matches[0];
-      await prisma.customer.delete({ where: { id: target.id } });
+      await db.customer.delete({ where: { id: target.id } });
 
       const responseText =
         cookLang === "en"
@@ -417,7 +461,7 @@ export async function executeVoiceIntent(
       }
 
       const target = matches[0];
-      await prisma.dailyOrder.upsert({
+      await db.dailyOrder.upsert({
         where: {
           customerId_date: {
             customerId: target.id,
@@ -445,7 +489,7 @@ export async function executeVoiceIntent(
               ? "ಇಂದು"
               : "aaj";
 
-      const freshTally = await getDailyTally();
+      const freshTally = await getDailyTally(undefined, db);
       const responseText =
         cookLang === "en"
           ? `Marked ${target.name} as skipped for ${dayWord}. Today's tally is now ${freshTally.activeTiffins}.`
@@ -494,12 +538,12 @@ export async function executeVoiceIntent(
 
       const target = matches[0];
       if (entities.permanent) {
-        await prisma.customer.update({
+        await db.customer.update({
           where: { id: target.id },
           data: { status: "cancelled", pauseUntil: null },
         });
       } else {
-        await prisma.dailyOrder.upsert({
+        await db.dailyOrder.upsert({
           where: {
             customerId_date: {
               customerId: target.id,
@@ -515,7 +559,7 @@ export async function executeVoiceIntent(
         });
       }
 
-      const freshTally = await getDailyTally();
+      const freshTally = await getDailyTally(undefined, db);
       const responseText =
         cookLang === "en"
           ? `Cancelled ${target.name}'s ${entities.permanent ? "subscription" : entities.date === "tomorrow" ? "tomorrow's tiffin" : "today's tiffin"}. Today's tally is ${freshTally.activeTiffins}.`
@@ -566,12 +610,12 @@ export async function executeVoiceIntent(
       const days = entities.days && entities.days > 0 ? entities.days : 3;
       const pauseUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
-      await prisma.customer.update({
+      await db.customer.update({
         where: { id: target.id },
         data: { status: "paused", pauseUntil },
       });
 
-      const freshTally = await getDailyTally();
+      const freshTally = await getDailyTally(undefined, db);
       const responseText =
         cookLang === "en"
           ? `Paused ${target.name} for ${days} days. Today's tally is ${freshTally.activeTiffins}.`
@@ -619,12 +663,12 @@ export async function executeVoiceIntent(
       }
 
       const target = matches[0];
-      await prisma.customer.update({
+      await db.customer.update({
         where: { id: target.id },
         data: { status: "active", pauseUntil: null },
       });
       // Clear any skipped/cancelled order for today so resumed customer counts today
-      await prisma.dailyOrder.deleteMany({
+      await db.dailyOrder.deleteMany({
         where: {
           customerId: target.id,
           date: todayUTC,
@@ -632,7 +676,7 @@ export async function executeVoiceIntent(
         },
       });
 
-      const freshTally = await getDailyTally();
+      const freshTally = await getDailyTally(undefined, db);
       const responseText =
         cookLang === "en"
           ? `Resumed ${target.name}'s tiffin. Today's tally is now ${freshTally.activeTiffins}.`
@@ -681,7 +725,7 @@ export async function executeVoiceIntent(
 
       const target = matches[0];
       const extraItems = entities.extraItems?.trim() || "Extra item";
-      await prisma.dailyOrder.upsert({
+      await db.dailyOrder.upsert({
         where: {
           customerId_date: {
             customerId: target.id,
@@ -744,7 +788,7 @@ export async function executeVoiceIntent(
 
       const target = matches[0];
       const newDiet = entities.dietaryPref || "jain";
-      await prisma.customer.update({
+      await db.customer.update({
         where: { id: target.id },
         data: { dietaryPref: newDiet },
       });
@@ -768,7 +812,7 @@ export async function executeVoiceIntent(
     }
 
     case "payment_check": {
-      const payments = await prisma.payment.findMany({
+      const payments = await db.payment.findMany({
         where: { month: currentMonth },
         include: { customer: true },
         orderBy: { createdAt: "asc" },
@@ -848,15 +892,84 @@ export async function executeVoiceIntent(
       });
     }
 
+    case "payment_record": {
+      const matches = resolveCustomerMatches(entities.customerName, options.originalText, candidatesPool);
+      if (matches.length !== 1) {
+        return buildResult({
+          intent, entities, confidence: parsed.confidence, actionPerformed: false,
+          responseText: matches.length > 1
+            ? disambiguationPrompt(entities.customerName || "", matches, cookLang)
+            : customerNotFoundMsg(entities.customerName, cookLang),
+          ...(matches.length > 1 ? {
+            needsDisambiguation: true,
+            candidates: matches.map(({ id, name, phoneLast4 }) => ({ id, name, phoneLast4 })),
+          } : {}),
+        });
+      }
+      const target = matches[0];
+      const payment = await db.payment.findUnique({
+        where: { customerId_month: { customerId: target.id, month: currentMonth } },
+      });
+      if (!payment || payment.status === "paid") {
+        return buildResult({
+          intent, entities, confidence: parsed.confidence, actionPerformed: false,
+          responseText: !payment ? `No payment record for ${target.name} this month.` : `${target.name}: payment already paid.`,
+        });
+      }
+      const remaining = payment.amount - payment.paidAmount;
+      const amount = entities.paymentAmount ?? remaining;
+      if ((options.expectedBalance !== undefined && options.expectedBalance !== remaining) || amount <= 0 || amount > remaining) {
+        return buildResult({
+          intent, entities, confidence: parsed.confidence, actionPerformed: false,
+          responseText: `${target.name}: ₹${remaining} due. Check the amount and try again.`,
+        });
+      }
+      if (options.receiptId) await recordReceipt(db, payment.id, amount, options.receiptId);
+      else await db.payment.update({
+        where: { id: payment.id },
+        data: { paidAmount: payment.paidAmount + amount, status: amount === remaining ? "paid" : "partial", paidAt: new Date() },
+      });
+      const due = remaining - amount;
+      const localeReceipt: Record<string, string> = {
+        ta: `${target.name} செலுத்திய ₹${amount} பதிவானது. பாக்கி ₹${due}.`,
+        te: `${target.name} చెల్లించిన ₹${amount} నమోదు అయింది. బాకీ ₹${due}.`,
+        mr: `${target.name} यांचे ₹${amount} जमा केले. ₹${due} बाकी आहेत.`,
+      };
+      return buildResult({
+        intent, entities, confidence: parsed.confidence, actionPerformed: true,
+        responseText: cookLang === "en"
+          ? `Recorded ₹${amount} for ${target.name}. ₹${due} still due.`
+          : cookLang === "kn"
+            ? `${target.name} ಅವರ ₹${amount} ಪಾವತಿ ದಾಖಲಿಸಿದೆ. ₹${due} ಬಾಕಿ ಇದೆ.`
+            : localeReceipt[cookLang] ?? `${target.name} का ₹${amount} भुगतान दर्ज किया। ₹${due} बाकी है।`,
+        actionSummary: `${target.name}: ₹${amount} paid`,
+        data: { paid: amount, remaining: due },
+      });
+    }
+
     case "payment_remind": {
-      const payments = await prisma.payment.findMany({
-        where: { month: currentMonth, status: { not: "paid" } },
+      const payments = await db.payment.findMany({
+        where: { month: currentMonth, status: { not: "paid" },
+          ...(options.reminderPaymentIds ? { id: { in: options.reminderPaymentIds } } : {}),
+        },
         include: { customer: true },
       });
 
       let targetPayments = payments;
       if (entities.customerName) {
-        const matches = findMatchingCustomers(entities.customerName, candidatesPool);
+        const matches = resolveCustomerMatches(entities.customerName, options.originalText, candidatesPool);
+        if (matches.length !== 1) {
+          return buildResult({
+            intent, entities, confidence: parsed.confidence, actionPerformed: false,
+            responseText: matches.length > 1
+              ? disambiguationPrompt(entities.customerName, matches, cookLang)
+              : customerNotFoundMsg(entities.customerName, cookLang),
+            ...(matches.length > 1 ? {
+              needsDisambiguation: true,
+              candidates: matches.map(({ id, name, phoneLast4 }) => ({ id, name, phoneLast4 })),
+            } : {}),
+          });
+        }
         if (matches.length === 1) {
           targetPayments = payments.filter((p) => p.customerId === matches[0].id);
         }
@@ -878,7 +991,7 @@ export async function executeVoiceIntent(
         });
       }
 
-      await prisma.payment.updateMany({
+      await db.payment.updateMany({
         where: { id: { in: targetPayments.map((p) => p.id) } },
         data: { reminderSent: true },
       });
@@ -886,10 +999,10 @@ export async function executeVoiceIntent(
       const names = targetPayments.map((p) => p.customer.name.split(" ")[0]).join(", ");
       const responseText =
         cookLang === "en"
-          ? `Sent payment reminders to ${targetPayments.length} customers: ${names}.`
+          ? `Prepared simulated payment reminders for ${targetPayments.length} customers: ${names}.`
           : cookLang === "kn"
             ? `${targetPayments.length} ಗ್ರಾಹಕರಿಗೆ ಪಾವತಿ ನೆನಪಿಸುವ ಸಂದೇಶ ಕಳುಹಿಸಲಾಗಿದೆ: ${names}.`
-            : `${targetPayments.length} customers ko payment reminder bhej diya hai: ${names}.`;
+            : `${targetPayments.length} customers ke simulated payment reminders taiyaar hain: ${names}.`;
 
       return buildResult({
         intent,
@@ -897,28 +1010,46 @@ export async function executeVoiceIntent(
         responseText,
         confidence: parsed.confidence,
         actionPerformed: true,
-        actionSummary: `Sent ${targetPayments.length} payment reminders`,
-        data: { remindedCount: targetPayments.length },
+        actionSummary: `Prepared ${targetPayments.length} simulated payment reminders`,
+        data: {
+          remindedCount: targetPayments.length,
+          reminders: targetPayments.map((payment) => ({
+            name: payment.customer.name, amount: payment.amount - payment.paidAmount,
+            preview: `/payments?reminder=${encodeURIComponent(payment.id)}`,
+          })),
+        },
       });
     }
 
     case "menu_broadcast": {
       const menuText = entities.menuText?.trim() || options.originalText.trim();
+      const languages = allCustomers.filter((c) => c.status === "active").map((c) => c.language);
+      const translations = await buildMenuTranslations(menuText, cookLang, languages);
+      const broadcast = await db.menuBroadcast.create({
+        data: {
+          date: new Date(todayUTC.getTime() + 24 * 60 * 60 * 1000),
+          menuText,
+          translations: JSON.stringify(translations),
+        },
+      });
       const responseText =
         cookLang === "en"
-          ? `Got the menu: "${menuText}". Open the Menu page to translate & broadcast to all active subscribers.`
+          ? `Saved tomorrow's menu: "${menuText}". Your sharing previews are ready on the Menu page.`
           : cookLang === "kn"
             ? `ಮೆನು ಸಿಕ್ಕಿದೆ: "${menuText}". ಎಲ್ಲಾ ಗ್ರಾಹಕರಿಗೆ ಕಳುಹಿಸಲು Menu ಪುಟವನ್ನು ತೆರೆಯಿರಿ.`
-            : `Menu note kar liya: "${menuText}". Sabhi customers ko unki bhasha mein bhejne ke liye Menu tab kholein.`;
+            : `Kal ka menu save kar diya: "${menuText}". Share karne ke previews Menu tab mein taiyaar hain.`;
 
       return buildResult({
         intent,
         entities: { ...entities, menuText },
         responseText,
         confidence: parsed.confidence,
-        actionPerformed: false,
-        actionSummary: "Menu draft captured",
-        data: { menuText },
+        actionPerformed: true,
+        actionSummary: "Menu draft saved",
+        data: {
+          menuText, broadcastId: broadcast.id, languages,
+          audience: allCustomers.filter((customer) => customer.status === "active").length,
+        },
       });
     }
 

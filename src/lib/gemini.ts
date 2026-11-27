@@ -5,6 +5,7 @@ import type { FallbackIntent, ParsedCommand, ParsedEntities } from "./voice-fall
 const VALID_INTENTS = new Set<FallbackIntent>([
   "tally",
   "add_customer",
+  "edit_customer",
   "remove_customer",
   "skip",
   "cancel",
@@ -13,6 +14,7 @@ const VALID_INTENTS = new Set<FallbackIntent>([
   "extra",
   "diet_change",
   "payment_check",
+  "payment_record",
   "payment_remind",
   "menu_broadcast",
   "greeting",
@@ -135,6 +137,7 @@ export function parseGeminiStructuredPayload(rawText: string): ParsedCommand {
         : undefined;
 
   const priceNum = Number(rawEntities.price);
+  const paymentAmount = Number(rawEntities.payment_amount ?? rawEntities.paymentAmount);
   const daysNum = Number(rawEntities.days);
   const confNum = Number(parsed.confidence);
 
@@ -144,6 +147,8 @@ export function parseGeminiStructuredPayload(rawText: string): ParsedCommand {
       ? { dietaryPref: normalizeDietary(rawEntities.dietary_pref ?? rawEntities.dietaryPref) }
       : {}),
     ...(Number.isFinite(priceNum) && priceNum > 0 ? { price: Math.round(priceNum) } : {}),
+    ...(Number.isSafeInteger(paymentAmount) && paymentAmount > 0 ? { paymentAmount } : {}),
+    ...(typeof rawEntities.delivery_note === "string" ? { deliveryNote: rawEntities.delivery_note.slice(0, 500) } : {}),
     ...(extraItemsRaw?.trim() ? { extraItems: extraItemsRaw.trim() } : {}),
     ...(normalizeDateRef(rawEntities.date) ? { date: normalizeDateRef(rawEntities.date) } : {}),
     ...(Number.isFinite(daysNum) && daysNum > 0 ? { days: Math.round(daysNum) } : {}),
@@ -236,13 +241,15 @@ You understand Hindi, Hinglish (Romanized Hindi + English code-switching), Engli
 
 Respond ONLY with a valid JSON object matching this exact schema:
 {
-  "intent": "tally | add_customer | remove_customer | skip | cancel | pause | resume | extra | diet_change | payment_check | payment_remind | menu_broadcast | greeting | unknown",
+  "intent": "tally | add_customer | edit_customer | remove_customer | skip | cancel | pause | resume | extra | diet_change | payment_check | payment_record | payment_remind | menu_broadcast | greeting | unknown",
   "entities": {
     "customer_name": "exact customer name if mentioned, else null",
     "date": "today or tomorrow if applicable, else null",
     "dietary_pref": "regular | jain | less-oil | no-onion-garlic | null",
     "extra_items": "e.g. '2 extra roti' or null",
     "price": null,
+    "payment_amount": null,
+    "delivery_note": null,
     "days": null,
     "language": "hi | en | kn | ta | te | mr | null",
     "menu_text": "menu text if dictating menu, else null",
@@ -265,6 +272,8 @@ Intent rules:
 - "diet_change": changing customer's dietary preference ("Rajesh ka khana Jain kardo")
 - "payment_check": asking who hasn't paid or pending payments ("Kisne payment nahi kiya?")
 - "payment_remind": sending payment reminders ("Sabko payment reminder bhejo")
+- "payment_record": explicitly recording a receipt. Extract payment_amount for a specific amount, or null for an explicit full monthly payment. Never use for questions or negated payments. Requires a customer name.
+- "edit_customer": change a known customer's monthly price or delivery note. Preserve the customer's recorded name in customer_name.
 - "menu_broadcast": dictating menu ("Kal ka menu: dal tadka, jeera rice, roti")
 - "greeting": hello / namaste
 

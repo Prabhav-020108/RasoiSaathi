@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { SUPPORTED_LANGUAGES } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -56,16 +57,20 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (!SUPPORTED_LANGUAGES.some(({ code }) => code === originalLang)) {
+      return NextResponse.json({ error: "Choose a supported message language" }, { status: 400 });
+    }
 
-    const matchedCustomer = await prisma.customer.findFirst({
+    const matches = await prisma.customer.findMany({
       where: {
-        name: { contains: senderName },
+        name: senderName,
       },
+      take: 2,
     });
 
     const created = await prisma.message.create({
       data: {
-        customerId: matchedCustomer?.id ?? null,
+        customerId: matches.length === 1 ? matches[0].id : null,
         senderName,
         originalText,
         originalLang,

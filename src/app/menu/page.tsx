@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import {
   UtensilsCrossed,
@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/components/providers/AppProvider";
 import { useVoice } from "@/hooks/useVoice";
+import { localMenuTranslations } from "@/lib/ai-provider";
 import type { CustomerListItem } from "@/components/customers/CustomerCard";
 
 interface BroadcastItem {
@@ -41,7 +42,7 @@ const fetcher = async (url: string) => {
 const JAIN_NOTE_TEXT = "Jain version: without onion-garlic, with extra paneer";
 
 export default function MenuPage() {
-  const { dict, lang, showToast } = useApp();
+  const { dict, lang, aiTier, showToast } = useApp();
   const { data: custData } = useSWR<{ customers: CustomerListItem[] }>("/api/customers", fetcher);
   const {
     data: broadcastData,
@@ -58,7 +59,13 @@ export default function MenuPage() {
   const [copiedLang, setCopiedLang] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { status: voiceStatus, startListening, stopListening } = useVoice({
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("broadcast");
+    const saved = broadcastData?.broadcasts.find((b) => b.id === id);
+    if (saved) setActivePreview(saved);
+  }, [broadcastData]);
+
+  const { status: voiceStatus, startListening, stopListening, error: voiceError, interimTranscript } = useVoice({
     lang,
     onFinalTranscript: (spoken) => {
       setMenuText((prev) => (prev.trim() ? `${prev.trim()}, ${spoken}` : spoken));
@@ -98,13 +105,18 @@ export default function MenuPage() {
     setSubmitError(null);
     setTranslating(true);
     try {
+      const original = menuText.trim();
+      const localTranslations = aiTier === "local"
+        ? await localMenuTranslations(includeJainNote ? `${original}\n${JAIN_NOTE_TEXT}` : original, lang, Object.keys(langCounts))
+        : undefined;
       const res = await fetch("/api/menu/broadcast", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          menuText: menuText.trim(),
+          menuText: original,
+          localTranslations,
           jainNote: includeJainNote ? JAIN_NOTE_TEXT : undefined,
         }),
       });
@@ -115,7 +127,7 @@ export default function MenuPage() {
       const result = (await res.json()) as { broadcast: BroadcastItem };
       setActivePreview(result.broadcast);
       await mutateBroadcasts();
-      showToast("Menu translated & ready to share!", "success");
+      showToast("Menu preview saved.", "success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to translate menu";
       setSubmitError(msg);
@@ -226,6 +238,9 @@ export default function MenuPage() {
                   )}
                 </button>
               </div>
+
+              {interimTranscript && <p aria-live="polite" className="text-sm text-violet-700">{interimTranscript}</p>}
+              {voiceError && <p role="alert" className="text-sm text-red-700">{voiceError}</p>}
 
               {/* Jain Note Toggle */}
               <button

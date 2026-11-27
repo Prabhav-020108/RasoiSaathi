@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR, { mutate as globalMutate } from "swr";
 import { CheckCircle2, IndianRupee, Clock, Mic, Volume2, Square } from "lucide-react";
@@ -18,6 +18,8 @@ interface PaymentRowItem {
   amount: number;
   status: string;
   paidAmount: number;
+  receipts?: Array<{ id: string; amount: number }>;
+  reminderSent: boolean;
   customer: {
     id: string;
     name: string;
@@ -48,6 +50,39 @@ export default function PaymentsPage() {
   const voice = useVoice({ lang });
   const { data, isLoading, mutate } = useSWR<PaymentsResponse>("/api/payments", fetcher);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [partialId, setPartialId] = useState<string | null>(null);
+  const [partialAmount, setPartialAmount] = useState("");
+  const [reminderId, setReminderId] = useState<string | null>(null);
+  const receiptAttempt = useRef<{ paymentId: string; amount: number; receiptId: string } | null>(null);
+  useEffect(() => {
+    setReminderId(new URLSearchParams(window.location.search).get("reminder"));
+  }, []);
+
+  const handleReceipt = async (event: React.FormEvent, payment: PaymentRowItem) => {
+    event.preventDefault();
+    if (updatingId) return;
+    const amount = Number(partialAmount);
+    if (!Number.isSafeInteger(amount) || amount <= 0 || amount > payment.amount - payment.paidAmount) return;
+    const previous = receiptAttempt.current;
+    const receiptId = previous?.paymentId === payment.id && previous.amount === amount
+      ? previous.receiptId : crypto.randomUUID();
+    receiptAttempt.current = { paymentId: payment.id, amount, receiptId };
+    setUpdatingId(payment.id);
+    try {
+      const response = await fetch(`/api/payments/${payment.id}/receipts`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount, receiptId }),
+      });
+      if (!response.ok) throw new Error("Could not save the receipt");
+      receiptAttempt.current = null;
+      setPartialId(null);
+      await Promise.all([mutate(), globalMutate("/api/tally")]);
+      showToast("Receipt recorded", "success");
+    } catch {
+      showToast("Could not save the receipt. Check the balance and try again.", "error");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const handleMarkPaid = async (id: string) => {
     setUpdatingId(id);
@@ -66,6 +101,7 @@ export default function PaymentsPage() {
 
   const pendingRows = data?.payments.filter((p) => p.status !== "paid") ?? [];
   const paidRows = data?.payments.filter((p) => p.status === "paid") ?? [];
+  const selectedReminder = pendingRows.find((payment) => payment.id === reminderId && payment.reminderSent);
 
   const handleSpeakPending = () => {
     if (voice.status === "speaking") {
@@ -138,6 +174,16 @@ export default function PaymentsPage() {
       />
 
       <div className="px-4 space-y-4 pb-4">
+        {selectedReminder && (
+          <Card>
+            <CardContent className="space-y-2 p-4">
+              <h2 className="font-bold">Simulated UPI reminder</h2>
+              <p className="text-sm">{selectedReminder.customer.name} · {formatINR(selectedReminder.amount - selectedReminder.paidAmount)} due</p>
+              <p className="text-sm text-stone-600">Preview only. The amount is recorded when the cook enters a receipt.</p>
+              <Button type="button" variant="outline" onClick={() => setReminderId(null)}>Close</Button>
+            </CardContent>
+          </Card>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Card className="border-green-200 bg-green-50/40">
             <CardContent className="p-4">
@@ -175,6 +221,12 @@ export default function PaymentsPage() {
             <h2 className="text-sm font-bold text-[#1C1917]">
               Pending ({pendingRows.length})
             </h2>
+            {pendingRows.length > 0 && (
+              <Link href={`/voice?prompt=${encodeURIComponent("Send payment reminders")}`}
+                className="inline-flex min-h-[48px] items-center rounded-xl bg-violet-50 px-3 text-sm font-semibold text-violet-700">
+                Prepare reminders (simulated)
+              </Link>
+            )}
             {isLoading ? (
               <div className="h-20 rounded-2xl bg-stone-100 animate-pulse" />
             ) : pendingRows.length === 0 ? (
@@ -185,8 +237,9 @@ export default function PaymentsPage() {
               pendingRows.map((p) => (
                 <div
                   key={p.id}
-                  className="flex items-center justify-between gap-2 rounded-2xl border border-red-100 bg-red-50/30 px-3 py-2.5"
+                  className="space-y-2 rounded-2xl border border-red-100 bg-red-50/30 px-3 py-2.5"
                 >
+                  <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-[#1C1917] truncate">
                       {p.customer.name}
@@ -203,6 +256,27 @@ export default function PaymentsPage() {
                   >
                     {updatingId === p.id ? "..." : "Mark Paid"}
                   </Button>
+                  </div>
+                  {p.receipts?.length ? (
+                    <p className="text-xs text-stone-600">Receipts · {p.receipts.map(({ amount }) => formatINR(amount)).join(", ")}</p>
+                  ) : null}
+                  {p.reminderSent && (
+                    <Link href={`/payments?reminder=${encodeURIComponent(p.id)}`}
+                      onClick={() => setReminderId(p.id)}
+                      className="block text-sm font-semibold text-violet-700 underline">
+                      Open UPI reminder preview
+                    </Link>
+                  )}
+                  {partialId === p.id ? (
+                    <form className="flex gap-2" onSubmit={(event) => void handleReceipt(event, p)}>
+                      <input className="min-w-0 flex-1 rounded-xl border px-2" type="number" inputMode="numeric"
+                        aria-label="Amount received in rupees" min={1} max={p.amount - p.paidAmount} required
+                        value={partialAmount} onChange={(event) => setPartialAmount(event.target.value)} />
+                      <Button type="submit" disabled={Boolean(updatingId)}>Save receipt</Button>
+                    </form>
+                  ) : (
+                    <Button type="button" variant="outline" onClick={() => { setPartialAmount(""); setPartialId(p.id); }}>Record amount</Button>
+                  )}
                 </div>
               ))
             )}
@@ -222,6 +296,9 @@ export default function PaymentsPage() {
                 <div>
                   <p className="text-sm font-bold text-[#1C1917]">{p.customer.name}</p>
                   <p className="text-xs text-[#78716C]">{formatINR(p.amount)}</p>
+                  {p.receipts?.length ? (
+                    <p className="text-xs text-stone-600">Receipts · {p.receipts.map(({ amount }) => formatINR(amount)).join(", ")}</p>
+                  ) : null}
                 </div>
                 <Badge variant="success">
                   <CheckCircle2 className="w-3.5 h-3.5" />

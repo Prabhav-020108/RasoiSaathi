@@ -57,6 +57,7 @@ model Payment {
   paidAmount   Int       @default(0)
   paidAt       DateTime?
   reminderSent Boolean   @default(false)
+  receipts     PaymentReceipt[]
   createdAt    DateTime  @default(now())
 
   @@unique([customerId, month])
@@ -74,6 +75,9 @@ model Message {
   intent         String?   // skip, cancel, pause, extra, diet-change, payment, unknown
   status         String    @default("new") // new, processed, ignored
   autoReply      String?
+  proposal       String?
+  readAt         DateTime?
+  replyApprovedAt DateTime?
   createdAt      DateTime  @default(now())
 }
 
@@ -85,4 +89,19 @@ model MenuBroadcast {
   jainNote     String?
   sentAt       DateTime?
   createdAt    DateTime  @default(now())
+}
+
+model PaymentReceipt {
+  id        String   @id
+  paymentId String
+  amount    Int
+  createdAt DateTime @default(now())
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+}
+
+model VoiceApproval {
+  id        String   @id @default(cuid())
+  request   String
+  result    String?
+  expiresAt DateTime
 }

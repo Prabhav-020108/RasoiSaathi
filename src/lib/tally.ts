@@ -63,9 +63,9 @@ export function computeTallyFromData(
   const extraRequests: Array<{ customerId: string; customerName: string; items: string }> = [];
 
   for (const customer of customers) {
-    const isPausedByStatus =
-      customer.status === "paused" ||
-      (customer.pauseUntil !== null && customer.pauseUntil > now && customer.status !== "cancelled");
+    const isPausedByStatus = customer.pauseUntil
+      ? getTodayUTC(customer.pauseUntil) > getTodayUTC(now)
+      : customer.status === "paused";
 
     if (customer.status === "cancelled") {
       cancelledCount += 1;
@@ -148,16 +148,16 @@ export function computeTallyFromData(
   };
 }
 
-export async function getDailyTally(targetDate?: Date) {
+export async function getDailyTally(targetDate?: Date, db: import("@prisma/client").Prisma.TransactionClient = prisma) {
   const today = targetDate ? new Date(targetDate) : getTodayUTC();
   const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
   const currentMonth = getCurrentMonthKey();
 
   const [cook, customers, dailyOrders, payments, recentMessages, newMessagesCount] =
     await Promise.all([
-      prisma.cook.findFirst(),
-      prisma.customer.findMany({ orderBy: { createdAt: "asc" } }),
-      prisma.dailyOrder.findMany({
+      db.cook.findFirst(),
+      db.customer.findMany({ orderBy: { createdAt: "asc" } }),
+      db.dailyOrder.findMany({
         where: {
           date: {
             gte: today,
@@ -165,14 +165,14 @@ export async function getDailyTally(targetDate?: Date) {
           },
         },
       }),
-      prisma.payment.findMany({
+      db.payment.findMany({
         where: { month: currentMonth },
       }),
-      prisma.message.findMany({
+      db.message.findMany({
         orderBy: { createdAt: "desc" },
         take: 5,
       }),
-      prisma.message.count({
+      db.message.count({
         where: { status: "new" },
       }),
     ]);

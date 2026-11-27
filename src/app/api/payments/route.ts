@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentMonthKey } from "@/lib/utils";
+import { ensureMonthlyBills } from "@/lib/payment-receipts";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    await ensureMonthlyBills();
     const currentMonth = getCurrentMonthKey();
     const payments = await prisma.payment.findMany({
       where: { month: currentMonth },
       include: {
+        receipts: { orderBy: { createdAt: "desc" } },
         customer: {
           select: {
             id: true,

@@ -63,6 +63,8 @@ export interface VoiceProcessAPIResponse {
   actionPerformed: boolean;
   actionSummary?: string;
   needsDisambiguation?: boolean;
+  needsCustomerName?: boolean;
+  confirmationToken?: string;
   candidates?: Array<{ id: string; name: string; phoneLast4: string }>;
   tally?: unknown;
   data?: Record<string, unknown>;
@@ -75,11 +77,14 @@ export async function processVoiceCommand(
   options: {
     tier: AITier;
     customers?: KnownCustomerRef[];
+    kitchen?: boolean;
+    confirmationToken?: string;
+    lastCustomer?: string;
   }
 ): Promise<VoiceProcessAPIResponse> {
   let localParsed: ParsedCommand | null = null;
 
-  if (options.tier === "local") {
+  if (options.tier === "local" && !options.confirmationToken) {
     const { localIntentParse } = await import("./runanywhere");
     localParsed = await localIntentParse(text, cookLang, {
       cookLang,
@@ -95,6 +100,9 @@ export async function processVoiceCommand(
     body: JSON.stringify({
       text,
       cookLang,
+      kitchen: options.kitchen,
+      confirmationToken: options.confirmationToken,
+      lastCustomer: options.lastCustomer,
       tierHint: options.tier === "local" && !localParsed ? "basic" : options.tier,
       ...(localParsed ? { localParsed } : {}),
     }),
@@ -137,4 +145,14 @@ export async function translateText(
   }
 
   return res.json() as Promise<{ translated: string; tierUsed: AITier; notice?: string }>;
+}
+
+export async function localMenuTranslations(text: string, lang: string, languages: string[]) {
+  const translations: Record<string, string> = {};
+  for (const target of Array.from(new Set(languages))) {
+    if (target === lang) continue;
+    const result = await translateText(text, lang, target, "local");
+    if (!result.notice && result.translated.trim() !== text.trim()) translations[target] = result.translated;
+  }
+  return translations;
 }

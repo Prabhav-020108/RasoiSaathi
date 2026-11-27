@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+export { getTodayUTC, getCurrentMonthKey } from "./kitchen-date";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -13,17 +14,6 @@ export function formatINR(amount: number): string {
   }).format(amount);
 }
 
-export function getTodayUTC(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
-
-export function getCurrentMonthKey(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-
 export function formatReadableDate(date: Date = new Date(), lang: string = "en"): string {
   const localeMap: Record<string, string> = {
     hi: "hi-IN",
@@ -35,6 +25,7 @@ export function formatReadableDate(date: Date = new Date(), lang: string = "en")
   };
   try {
     return new Intl.DateTimeFormat(localeMap[lang] ?? "en-IN", {
+      timeZone: "Asia/Kolkata",
       weekday: "long",
       day: "numeric",
       month: "short",

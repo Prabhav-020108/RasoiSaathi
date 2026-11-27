@@ -245,7 +245,8 @@ export async function localIntentParse(
     const customerNames = (context.customers ?? []).map((c) => c.name).join(", ");
     const prompt = `You are RasoiSaathi, a tiffin business assistant.
 Parse this voice command and reply ONLY with JSON:
-{"intent":"tally|add_customer|remove_customer|skip|cancel|pause|resume|extra|diet_change|payment_check|payment_remind|menu_broadcast|greeting|unknown","entities":{"customer_name":null,"dietary_pref":null,"price":null,"days":null,"date":null,"extra_items":null},"confidence":0.85}
+{"intent":"tally|add_customer|remove_customer|skip|cancel|pause|resume|extra|diet_change|payment_check|payment_record|payment_remind|menu_broadcast|greeting|unknown","entities":{"customer_name":null,"dietary_pref":null,"price":null,"days":null,"date":null,"extra_items":null},"confidence":0.85}
+payment_record is only for an explicit full monthly payment receipt, never a question, negative, or partial payment.
 Cook language: ${cookLang}
 Customers: ${customerNames || "none"}
 Command: "${text}"`;

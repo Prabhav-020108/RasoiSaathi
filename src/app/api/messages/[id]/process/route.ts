@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { processMessageRecord } from "@/lib/message-processor";
+import { approveMessageRecord, processMessageRecord } from "@/lib/message-processor";
+import { prisma } from "@/lib/prisma";
 import type { ParsedCommand } from "@/lib/voice-fallback";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,9 @@ export async function POST(
     try {
       const raw = await request.text();
       if (raw.trim()) {
-        body = JSON.parse(raw) as Record<string, unknown>;
+        const parsed: unknown = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Expected a JSON object");
+        body = parsed as Record<string, unknown>;
       }
     } catch {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -25,9 +28,26 @@ export async function POST(
         ? (body.localParsed as ParsedCommand)
         : null;
 
-    const result = await processMessageRecord(context.params.id, {
+    const id = context.params.id;
+    if (body.action === "saveReply" || body.action === "approveReply") {
+      const reply = typeof body.reply === "string" ? body.reply.trim() : "";
+      if (body.action === "saveReply" && !reply) {
+        return NextResponse.json({ error: "Reply text is required" }, { status: 400 });
+      }
+      const changed = await prisma.message.updateMany({
+        where: { id, ...(body.action === "approveReply" ? { autoReply: { not: null } } : {}) },
+        data: body.action === "approveReply"
+          ? { replyApprovedAt: new Date() }
+          : { autoReply: reply.slice(0, 4000), replyApprovedAt: null },
+      });
+      return changed.count ? NextResponse.json({ saved: true }) : NextResponse.json({ error: "Message or reply not found" }, { status: 404 });
+    }
+    const result = body.action === "approve"
+      ? await approveMessageRecord(id, typeof body.proposal === "string" ? body.proposal : undefined)
+      : await processMessageRecord(id, {
       tierHint,
       localParsed,
+      localTranslation: typeof body.localTranslation === "string" ? body.localTranslation : undefined,
     });
 
     if (!result) {

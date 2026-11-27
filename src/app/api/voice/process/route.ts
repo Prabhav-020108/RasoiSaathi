@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getDailyTally } from "@/lib/tally";
-import { getCurrentMonthKey } from "@/lib/utils";
+import { getCurrentMonthKey, getTodayUTC } from "@/lib/utils";
+import { confirmVoiceApproval, prepareVoiceApproval } from "@/lib/voice-approval";
+import { ensureMonthlyBills } from "@/lib/payment-receipts";
 import { geminiProcess, resolveGeminiKey, type GeminiVoiceContext } from "@/lib/gemini";
 import { executeVoiceIntent } from "@/lib/voice-actions";
 import { keywordProcess, type FallbackIntent, type ParsedCommand } from "@/lib/voice-fallback";
@@ -11,6 +13,7 @@ export const dynamic = "force-dynamic";
 const VALID_INTENTS = new Set<FallbackIntent>([
   "tally",
   "add_customer",
+  "edit_customer",
   "remove_customer",
   "skip",
   "cancel",
@@ -19,6 +22,7 @@ const VALID_INTENTS = new Set<FallbackIntent>([
   "extra",
   "diet_change",
   "payment_check",
+  "payment_record",
   "payment_remind",
   "menu_broadcast",
   "greeting",
@@ -38,6 +42,7 @@ function normalizeLocalParsed(raw: unknown): ParsedCommand | null {
 
   const priceNum = Number(rawEntities.price);
   const daysNum = Number(rawEntities.days);
+  const paymentAmount = Number(rawEntities.paymentAmount ?? rawEntities.payment_amount);
 
   return {
     intent: intent as FallbackIntent,
@@ -53,6 +58,8 @@ function normalizeLocalParsed(raw: unknown): ParsedCommand | null {
           ? { dietaryPref: rawEntities.dietary_pref.trim() }
           : {}),
       ...(Number.isFinite(priceNum) && priceNum > 0 ? { price: Math.round(priceNum) } : {}),
+      ...(Number.isSafeInteger(paymentAmount) && paymentAmount > 0 ? { paymentAmount } : {}),
+      ...(typeof rawEntities.deliveryNote === "string" ? { deliveryNote: rawEntities.deliveryNote.slice(0, 500) } : {}),
       ...(typeof rawEntities.extraItems === "string" && rawEntities.extraItems.trim()
         ? { extraItems: rawEntities.extraItems.trim() }
         : typeof rawEntities.extra_items === "string" && rawEntities.extra_items.trim()
@@ -92,6 +99,11 @@ export async function POST(request: NextRequest) {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json({ error: "Request body must be a JSON object" }, { status: 400 });
     }
+    if (typeof body.confirmationToken === "string") {
+      const confirmed = await confirmVoiceApproval(body.confirmationToken);
+      return confirmed ? NextResponse.json(confirmed)
+        : NextResponse.json({ error: "Confirmation expired. Please repeat the request." }, { status: 409 });
+    }
 
     const text = typeof body.text === "string" ? body.text.trim() : "";
     if (!text) {
@@ -100,6 +112,7 @@ export async function POST(request: NextRequest) {
 
     const geminiKey = resolveGeminiKey();
 
+    await ensureMonthlyBills();
     const currentMonth = getCurrentMonthKey();
     const [cook, customers, tally, payments] = await Promise.all([
       prisma.cook.findFirst(),
@@ -142,7 +155,7 @@ export async function POST(request: NextRequest) {
             cookName: cook?.name || "Sunita Devi",
             cookLang,
             defaultPrice: cook?.defaultPrice ?? 3000,
-            todayISO: new Date().toISOString().slice(0, 10),
+            todayISO: getTodayUTC().toISOString().slice(0, 10),
             customers: customers.map((c) => ({
               id: c.id,
               name: c.name,
@@ -182,6 +195,22 @@ export async function POST(request: NextRequest) {
       tierUsed = "basic";
     }
 
+    if (body.kitchen) {
+      const receipt = text.match(/^(.+?)\s+(?:paid|भुगतान किया|ने दिए|ಪಾವತಿಸಿದರು|செலுத்தினார்|చెల్లించారు|ने भरले)\s*(?:₹|rs\.?\s*)?([0-9,]+)\s*(?:rupees|रुपये|ರೂಪಾಯಿ|ரூபாய்|రూపాయలు)?[.]?$/i);
+      if (receipt) {
+        parsed = {
+          intent: "payment_record", confidence: 1,
+          entities: { customerName: receipt[1].trim(), paymentAmount: Number(receipt[2].replaceAll(",", "")) },
+        };
+      }
+      if (typeof body.lastCustomer === "string" && /\b(her|him|them)\b|उसे|ಅವರಿಗೆ|அவரை|వారిని|त्यांना/i.test(text)) {
+        parsed.entities.customerName = body.lastCustomer;
+      }
+      if (["payment_record", "remove_customer", "payment_remind"].includes(parsed.intent) ||
+          (parsed.intent === "cancel" && parsed.entities.permanent)) {
+        return NextResponse.json(await prepareVoiceApproval({ parsed, cookLang, tierUsed, originalText: text }));
+      }
+    }
     const result = await executeVoiceIntent(parsed, {
       cookLang,
       tierUsed,
@@ -190,6 +219,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ...result,
+      needsCustomerName: body.kitchen === true && parsed.intent === "add_customer" && !parsed.entities.customerName,
       tierUsed,
       detectedLanguage: parsed.detectedLanguage || cookLang,
       ...(fallbackReason ? { fallbackReason } : {}),
