@@ -1,14 +1,24 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+
+const databaseUrl = "file:./api-test.db";
+const useComposeTest = process.argv.includes("--compose-test");
+if (!useComposeTest) {
+  fs.closeSync(fs.openSync("prisma/api-test.db", "a"));
+  const schema = spawnSync(process.execPath, ["node_modules/prisma/build/index.js", "db", "push", "--skip-generate"], {
+    env: { ...process.env, DATABASE_URL: databaseUrl }, stdio: "inherit",
+  });
+  assert.equal(schema.status, 0, "Could not initialize isolated API test database");
+}
 
 function readEnvKey() {
   const envPath = path.join(process.cwd(), ".env");
   if (!fs.existsSync(envPath)) return "";
   const txt = fs.readFileSync(envPath, "utf8");
   const m = txt.match(/^GEMINI_API_KEY=(.+)$/m);
-  return m ? m[1].trim() : "";
+  return m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
 }
 
 async function waitForHealth(url) {
@@ -26,22 +36,23 @@ async function waitForHealth(url) {
 
 async function runSuite(modeName, envOverrides) {
   console.log(`\n=== STARTING MODE: ${modeName} ===`);
-  const child = spawn(
+  const child = useComposeTest ? null : spawn(
     process.execPath,
     ["node_modules/next/dist/bin/next", "start", "-p", "3005"],
     {
-      env: { ...process.env, ...envOverrides },
+      env: { ...process.env, ...envOverrides, DATABASE_URL: databaseUrl },
       stdio: ["ignore", "pipe", "pipe"],
     }
   );
   let logs = "";
-  child.stdout.on("data", (d) => (logs += d.toString()));
-  child.stderr.on("data", (d) => (logs += d.toString()));
+  child?.stdout.on("data", (d) => (logs += d.toString()));
+  child?.stderr.on("data", (d) => (logs += d.toString()));
 
   try {
-    const base = "http://127.0.0.1:3005";
+    const base = useComposeTest ? "http://127.0.0.1:3012" : "http://127.0.0.1:3005";
     const health = await waitForHealth(base);
     console.log("Health:", health);
+    if (useComposeTest) assert.equal(health.geminiConfigured, false);
 
     let res = await fetch(`${base}/api/demo/reset`, { method: "POST" });
     assert.equal(res.status, 200);
@@ -52,6 +63,8 @@ async function runSuite(modeName, envOverrides) {
       "/customers",
       "/payments",
       "/settings",
+      "/messages",
+      "/menu",
       "/wasm/racommons.js",
       "/wasm/racommons-llamacpp.js",
     ]) {
@@ -83,6 +96,11 @@ async function runSuite(modeName, envOverrides) {
     console.log(modeName, "tally:", data.intent, data.tierUsed, data.tally.activeTiffins, "->", data.responseText);
     assert.equal(data.intent, "tally");
     assert.equal(data.tally.activeTiffins, 8);
+    if (modeName === "TIER1_GEMINI") {
+      assert.equal(data.tierUsed, "gemini", "Configured Gemini must actually handle the command");
+      console.log("PASS: live server-configured Gemini handles voice commands by default");
+      return;
+    }
 
     // 3. Add customer by voice
     res = await fetch(`${base}/api/voice/process`, {
@@ -194,22 +212,60 @@ async function runSuite(modeName, envOverrides) {
     console.log(modeName, "translate:", data);
     assert.ok(data.translated);
 
+    // 12. Receipt updates payment; repeated receipt is harmless.
+    const command = async (text) => {
+      const response = await fetch(`${base}/api/voice/process`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, cookLang: "en" }),
+      });
+      assert.equal(response.status, 200);
+      return response.json();
+    };
+    data = await command("Priya ka payment aa gaya");
+    assert.equal(data.intent, "payment_record");
+    assert.equal(data.actionPerformed, true);
+    assert.equal((await command("Priya ka payment aa gaya")).actionPerformed, false);
+
+    // 13. Extra orders and dietary changes persist.
+    assert.equal((await command("Pooja ko 3 extra roti")).actionPerformed, true);
+    assert.equal((await command("Sanjay ka khana Jain kardo")).actionPerformed, true);
+    const currentCustomers = (await (await fetch(`${base}/api/customers`)).json()).customers;
+    assert.equal(currentCustomers.find((c) => c.name === "Sanjay Gupta").dietaryPref, "jain");
+
+    // 14. A dictated menu creates a real saved draft.
+    data = await command("Kal ka menu: dal tadka, rice, roti");
+    assert.equal(data.actionPerformed, true);
+    assert.ok(data.data.broadcastId);
+
+    // 15. Process an inbox message once, preserving tomorrow's date.
+    const messages = (await (await fetch(`${base}/api/messages`)).json()).messages;
+    const sarah = messages.find((m) => m.senderName.includes("Sarah"));
+    const processMessage = (action) => fetch(`${base}/api/messages/${sarah.id}/process`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }),
+    }).then((r) => r.json());
+    const review = await processMessage("read");
+    assert.equal(review.actionPerformed, false);
+    assert.equal(review.message.status, "review");
+    assert.equal((await processMessage("approve")).actionPerformed, true);
+    assert.equal((await processMessage("approve")).alreadyProcessed, true);
+
     await fetch(`${base}/api/demo/reset`, { method: "POST" });
     console.log(`=== PASSED MODE: ${modeName} ===`);
   } catch (err) {
     console.error("Server logs:\n", logs);
     throw err;
   } finally {
-    child.kill();
+    child?.kill();
     await new Promise((r) => setTimeout(r, 500));
   }
 }
 
-const key = readEnvKey();
+const cloudRequested = !useComposeTest && process.argv.includes("--cloud") && !process.argv.includes("--no-cloud");
+const key = cloudRequested ? readEnvKey() : "";
 if (key) {
   await runSuite("TIER1_GEMINI", { GEMINI_API_KEY: key });
 } else {
-  console.log("Skipping TIER1_GEMINI (no key in .env)");
+  console.log("Skipping live Gemini test (requires --cloud and a key in .env)");
 }
 await runSuite("NO_KEY_FALLBACK", { GEMINI_API_KEY: "" });
 console.log("\nALL E2E FLOWS PASSED");
