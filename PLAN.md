@@ -1,5 +1,7 @@
 # RasoiSaathi — Build Plan (Round 2)
 
+> **Foreground Kitchen Mode update (28 Nov 2026).** The wake word is **Saathi**. When microphone permission is granted, Kitchen Mode starts as soon as the foreground app opens. The cook can say the wake word and command together. Routine requests use local parsing for a quicker response. Review and approval come before a simulated order change, reply, reminder, or menu send. See the [kitchen roadmap](KITCHEN-ROADMAP.md) for the phases and phone sign-off.
+
 > **Accepted update (27 Nov 2026):** Gemini keys are configured only in the server environment. No app key-entry forms, browser key storage, or client-key headers. Configured Gemini is the automatic default, regardless of remembered fallback preferences, with no missing-key message. Without a key, display the unavailable status and retain Basic Mode plus optional Local AI. This decision supersedes the older setup wireframes and code sketches below.
 >
 > **Voice completion scope:** M opens and activates the voice console; M toggles listening there; Escape stops recognition/TTS. Ignore shortcuts while typing or using dialogs. Require final transcripts, reject low-confidence speech, guard overlapping submissions and stale callbacks, update SQLite and refresh affected data, and speak the result. Persist dictated menus and explicitly confirmed full monthly payment receipts. Always-on wake words, Whisper/Piper, production WhatsApp sending, and full offline database access remain future work.
@@ -801,14 +803,13 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A["Customer message arrives\n(simulated in prototype)"] --> B["Detect language\n(Gemini or heuristic)"]
-    B --> C["Parse intent:\nskip / cancel / pause /\nextra / diet change / payment"]
-    C --> D["Update customer record\nin database"]
-    D --> E["Recalculate daily tally"]
-    E --> F["Translate to cook's language"]
-    F --> G["Voice announcement\nto cook"]
-    G --> H["Generate auto-reply\nin customer's language"]
-    H --> I["Show in message feed\n(simulated send)"]
+    A["Customer sends a simulated message"] --> B["Identify the request and prepare the cook-language readout"]
+    B --> C["Read the request during a pause"]
+    C --> D{"Cook approves?"}
+    D -->|Later| E["Keep the message available for review"]
+    D -->|Yes| F["Apply any approved order change and refresh the tally"]
+    F --> G["Prepare the customer-language reply"]
+    G --> H["After send approval, store the reply in both chat views"]
 ```
 
 ### 5.4 Database Schema

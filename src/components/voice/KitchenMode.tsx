@@ -16,6 +16,16 @@ type FollowUp =
   | { kind: "confirm"; token: string }
   | { kind: "menu" | "reviseMenu"; id: string; languages: string[]; audience: number };
 
+function sentMessage(lang: string, count = 1) {
+  return ({
+    hi: `सिमुलेटर में ${count} संदेश भेजे।`,
+    kn: `ಸಿಮ್ಯುಲೇಟರ್‌ನಲ್ಲಿ ${count} ಸಂದೇಶಗಳನ್ನು ಕಳುಹಿಸಿದೆ.`,
+    ta: `சிமுலேட்டரில் ${count} செய்திகள் அனுப்பப்பட்டன.`,
+    te: `సిమ్యులేటర్‌లో ${count} సందేశాలు పంపాము.`,
+    mr: `सिम्युलेटरमध्ये ${count} संदेश पाठवले.`,
+  })[lang] ?? `Sent ${count} ${count === 1 ? "message" : "messages"} in the simulator.`;
+}
+
 async function loadInbox(url: string) {
   const result = await fetch(url);
   if (!result.ok) throw new Error("Could not load the inbox");
@@ -29,6 +39,7 @@ export function KitchenMode() {
   const [suspended, setSuspended] = useState(false);
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState("");
+  const [permission, setPermission] = useState<PermissionState>("prompt");
   const [followUp, setFollowUp] = useState<FollowUp | null>(null);
   const session = useRef(0);
   const running = useRef(false);
@@ -41,11 +52,25 @@ export function KitchenMode() {
   const queue = useRef<InboxMessage[]>([]);
   const deferred = useRef<InboxMessage | null>(null);
   const recognitionFailures = useRef(0);
-  const { data: inbox } = useSWR("/api/messages", loadInbox, { refreshInterval: active ? 4000 : 0 });
+  const optedOut = useRef(false);
+  const listeningLanguage = useRef(lang);
+  const { data: inbox } = useSWR("/api/messages", loadInbox, { refreshInterval: active ? 1500 : 0 });
 
   const voice = useVoice({
     lang,
     kitchen: true,
+    acceptFinalTranscript(text, confidence) {
+      if (!running.current || inTurn.current || document.hidden) return false;
+      recognitionFailures.current = 0;
+      const wake = wakeCommand(text);
+      if (wake === "") {
+        if (confidence > 0 && confidence < 0.2) return false;
+        commandUntil.current = Date.now() + 10_000;
+        setLast(words.listening);
+        return false;
+      }
+      return wake !== null || Boolean(followUp) || Date.now() < commandUntil.current || kitchenControl(text) === "stop";
+    },
     onRecognitionFailure(code) {
       if (code === "no-speech" || code === "aborted") return;
       recognitionFailures.current++;
@@ -62,6 +87,7 @@ export function KitchenMode() {
   const { startListening, cancelListening, stopSpeaking, speak, status } = voice;
 
   function stop(needsResume = false) {
+    if (!needsResume) optedOut.current = true;
     running.current = false;
     session.current++;
     inTurn.current = false;
@@ -100,12 +126,17 @@ export function KitchenMode() {
 
   async function readMessage(message: InboxMessage, turn: number) {
     seen.current.add(message.id);
-    const { message: reviewed, spokenSummary } = await readInboxMessage(message, lang, aiTier);
+    const { message: reviewed, spokenSummary, replyMeaning } = await readInboxMessage(message, lang, aiTier);
     if (turn !== session.current) return;
     void mutate("/api/messages");
+    if (reviewed.intent === "enquiry" && reviewed.autoReply && !reviewed.replyApprovedAt) {
+      setFollowUp({ kind: "reply", message: reviewed });
+      await say(`${reviewed.senderName}. ${spokenSummary ?? words.newMessage} ${replyMeaning ?? ""} ${words.approve}`, turn);
+      return;
+    }
     const text = reviewed.originalLang === lang ? reviewed.originalText
       : reviewed.translatedLang === lang && reviewed.translatedText ? reviewed.translatedText
-        : spokenSummary ? `${words.unavailable} ${spokenSummary}` : words.unavailable;
+        : spokenSummary ?? words.unavailable;
     setFollowUp({ kind: text === words.unavailable ? "message" : "translatedMessage", message: reviewed });
     await say(`${words.newMessage} ${reviewed.senderName}. ${text} ${reviewed.proposal && text !== words.unavailable ? words.approve : words.pending}`, turn);
   }
@@ -170,7 +201,7 @@ export function KitchenMode() {
     if (turn !== session.current) return;
     const result = await fetch(`/api/menu/broadcast/${menu.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "revise", menuText: text, localTranslations }),
+      body: JSON.stringify({ action: "revise", menuText: text, localTranslations, sourceLanguage: lang, deferTranslation: aiTier !== "local" }),
     });
     if (!result.ok) throw new Error("Menu revision failed");
     if (turn !== session.current) return;
@@ -185,7 +216,9 @@ export function KitchenMode() {
     const command = afterWake ?? text;
     const control = kitchenControl(command);
     if (afterWake === null && Date.now() > commandUntil.current && !followUp && control !== "stop") return;
-    if (confidence > 0 && confidence < 0.6) {
+    const approval = Boolean(followUp && (control === "yes" || control === "send"));
+    if (confidence > 0 && confidence < (approval ? 0.4 : 0.25)) {
+      commandUntil.current = Date.now() + 8000;
       await say(words.retry, turn);
       return;
     }
@@ -205,7 +238,7 @@ export function KitchenMode() {
       return;
     }
     if (control === "no") {
-      if (followUp?.kind === "message" || followUp?.kind === "translatedMessage") deferred.current = followUp.message;
+      if (followUp?.kind === "message" || followUp?.kind === "translatedMessage" || followUp?.kind === "reply") deferred.current = followUp.message;
       setFollowUp(null);
       await say(words.cancelled, turn);
       return;
@@ -227,7 +260,7 @@ export function KitchenMode() {
       await say(menu ? (menu.translations[lang] || menu.menuText).replace(/ \(Original - translate with Gemini API\)$/, "") : words.empty, turn);
       return;
     }
-    if (followUp?.kind === "confirm" && control === "yes") {
+    if (followUp?.kind === "confirm" && (control === "yes" || control === "send")) {
       setFollowUp(null);
       await runCommand("confirm", turn, followUp.token);
       return;
@@ -241,13 +274,15 @@ export function KitchenMode() {
       await reviseMenu(followUp, command, turn);
       return;
     }
-    if (followUp?.kind === "menu" && control === "yes") {
+    if (followUp?.kind === "menu" && (control === "yes" || control === "send")) {
       const menu = followUp;
       setFollowUp(null);
       const result = await fetch(`/api/menu/broadcast/${menu.id}`, { method: "PATCH" });
       if (!result.ok) throw new Error("Menu approval failed");
+      const { recipientCount } = await result.json() as { recipientCount: number };
       void mutate("/api/menu/broadcast");
-      await say(words.savedReply, turn);
+      void mutate("/api/messages");
+      await say(sentMessage(lang, recipientCount), turn);
       return;
     }
     if (followUp?.kind === "customer") {
@@ -275,27 +310,29 @@ export function KitchenMode() {
       await reviewReply({ ...message, autoReply: translation.translated }, turn);
       return;
     }
-    if ((followUp?.kind === "message" || followUp?.kind === "translatedMessage") && control === "yes") {
+    if ((followUp?.kind === "message" || followUp?.kind === "translatedMessage") && (control === "yes" || control === "send")) {
       const message = followUp.message;
       if (!message.proposal || followUp.kind !== "translatedMessage") {
         return say(words.pending, turn);
       }
       setFollowUp(null);
-      const result = await inboxAction(message.id, "approve", { proposal: message.proposal });
+      const result = await inboxAction(message.id, control === "send" ? "approveAndReply" : "approve", { proposal: message.proposal });
       void mutate("/api/messages");
       void mutate("/api/tally");
       if (!result.actionPerformed && !result.alreadyProcessed) return say(words.pending, turn);
-      await reviewReply(result.message, turn, result.replyMeaning);
+      if (control === "send" && result.message.replyApprovedAt) await say(sentMessage(lang), turn);
+      else await reviewReply(result.message, turn, result.replyMeaning);
       return;
     }
-    if (followUp?.kind === "reply" && control === "yes") {
+    if (followUp?.kind === "reply" && (control === "yes" || control === "send")) {
       await inboxAction(followUp.message.id, "approveReply");
       setFollowUp(null);
       void mutate("/api/messages");
-      await say(words.savedReply, turn);
+      await say(sentMessage(lang), turn);
       return;
     }
     if (followUp) return say(words.retry, turn);
+    if (control === "reminders") return runCommand("Send payment reminders", turn);
     const tomorrow = control === "tomorrow" && lastQuery.current;
     await runCommand(tomorrow
       ? `${lastQuery.current.replace(/\btoday\b|\baaj\b|आज|ಇಂದು|இன்று|ఈరోజు/gi, "")} tomorrow`
@@ -306,6 +343,8 @@ export function KitchenMode() {
     if (!voice.isSTTSupported || document.hidden) return;
     session.current++;
     running.current = true;
+    optedOut.current = false;
+    listeningLanguage.current = lang;
     recognitionFailures.current = 0;
     known.current = inbox ? new Set(inbox.messages.map(({ id }) => id)) : null;
     queue.current = [];
@@ -320,6 +359,51 @@ export function KitchenMode() {
     setLast(words.ready);
     startListening();
   }
+
+  useEffect(() => () => {
+    running.current = false;
+    session.current++;
+    document.documentElement.removeAttribute("data-kitchen-mode");
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let result: PermissionStatus | undefined;
+    if (!navigator.permissions) return;
+    function update() {
+      if (!disposed && result) setPermission(result.state);
+    }
+    void navigator.permissions.query({ name: "microphone" as PermissionName }).then((permissionStatus) => {
+      if (disposed) return;
+      result = permissionStatus;
+      result.addEventListener("change", update);
+      update();
+    }).catch(() => {});
+    return () => {
+      disposed = true;
+      result?.removeEventListener("change", update);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!cookLoading && voice.isSTTSupported && permission === "granted" &&
+        !running.current && !suspended && !optedOut.current) start();
+  // Use the current cook profile and recognizer when permission becomes available.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cookLoading, voice.isSTTSupported, permission, suspended]);
+
+  useEffect(() => {
+    if (!active || listeningLanguage.current === lang) return;
+    listeningLanguage.current = lang;
+    session.current++;
+    inTurn.current = false;
+    commandUntil.current = 0;
+    setBusy(false);
+    setFollowUp(null);
+    setLast(words.ready);
+    stopSpeaking();
+    cancelListening();
+  }, [active, lang, words.ready, stopSpeaking, cancelListening]);
 
   useEffect(() => {
     if (!active || !inbox) return;
@@ -341,7 +425,7 @@ export function KitchenMode() {
       else if (status !== "listening") {
         startListening();
       }
-    }, status === "listening" ? 900 : 350);
+    }, status === "listening" ? 650 : recognitionFailures.current ? 700 : 75);
     return () => window.clearTimeout(timer);
   // Transcript handling uses the current render when an idle or inbox event arrives.
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -34,7 +34,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
-          "var(--font-plus-jakarta)",
+          '"Plus Jakarta Sans Variable"',
           "system-ui",
           "-apple-system",
           "BlinkMacSystemFont",

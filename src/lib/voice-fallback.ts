@@ -27,6 +27,7 @@ export interface ParsedEntities {
   days?: number;
   language?: string;
   menuText?: string;
+  appendMenu?: boolean;
   permanent?: boolean;
 }
 

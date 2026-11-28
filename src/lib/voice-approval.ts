@@ -3,6 +3,7 @@ import { getCurrentMonthKey } from "./utils";
 import { executeVoiceIntent, resolveCustomerMatches } from "./voice-actions";
 import type { ParsedCommand } from "./voice-fallback";
 import { kitchenCopy } from "./kitchen-language";
+import { paymentReminder } from "./chat-delivery";
 
 interface ApprovalRequest {
   parsed: ParsedCommand;
@@ -12,6 +13,7 @@ interface ApprovalRequest {
   customerId?: string;
   expectedBalance?: number;
   reminderPaymentIds?: string[];
+  reminderBalances?: Record<string, number>;
   month: string;
 }
 
@@ -28,9 +30,12 @@ export async function prepareVoiceApproval(request: Omit<ApprovalRequest, "month
     const bills = await prisma.payment.findMany({
       where: { month, status: { not: "paid" } }, include: { customer: true },
     });
-    request.reminderPaymentIds = bills.map((bill) => bill.id);
-    label = bills.map((bill) => `${bill.customer.name}, ₹${bill.amount - bill.paidAmount}`).join(". ");
+    const pending = bills.filter((bill) => bill.amount > bill.paidAmount);
+    request.reminderPaymentIds = pending.map((bill) => bill.id);
+    request.reminderBalances = Object.fromEntries(pending.map((bill) => [bill.id, bill.amount - bill.paidAmount]));
+    label = pending.map((bill) => `${bill.customer.name}, ₹${bill.amount - bill.paidAmount}`).join(". ");
     if (!label) return { ...response, responseText: "₹0" };
+    label = `${paymentReminder(cookLang, pending[0].amount - pending[0].paidAmount)} ${label}.`;
   } else {
     const matches = resolveCustomerMatches(parsed.entities.customerName, originalText,
       customers.map((customer) => ({
@@ -50,6 +55,13 @@ export async function prepareVoiceApproval(request: Omit<ApprovalRequest, "month
     const customer = matches[0];
     request.customerId = customer.id;
     label = customer.name;
+    if (parsed.intent === "payment_remind") {
+      const bill = await prisma.payment.findUnique({ where: { customerId_month: { customerId: customer.id, month } } });
+      if (!bill || bill.amount <= bill.paidAmount) return { ...response, responseText: `${customer.name}. ₹0.` };
+      request.reminderPaymentIds = [bill.id];
+      request.reminderBalances = { [bill.id]: bill.amount - bill.paidAmount };
+      label = `${customer.name}. ${paymentReminder(cookLang, bill.amount - bill.paidAmount)}`;
+    }
     if (parsed.intent === "payment_record") {
       const bill = await prisma.payment.findUnique({ where: { customerId_month: { customerId: customer.id, month } } });
       const due = bill ? bill.amount - bill.paidAmount : 0;

@@ -188,10 +188,11 @@ async function generateWithFallbackModel(
   const genAI = new GoogleGenerativeAI(apiKey);
   const primaryModel = process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite";
   const modelsToTry = Array.from(
-    new Set([primaryModel, "gemini-2.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"])
-  );
+    new Set([primaryModel, "gemini-flash-latest", "gemini-2.5-flash-lite"])
+  ).slice(0, 2);
 
   let lastError: unknown;
+  const deadline = Date.now() + 5200;
   for (const modelName of modelsToTry) {
     try {
       const model = genAI.getGenerativeModel(
@@ -203,7 +204,7 @@ async function generateWithFallbackModel(
             ...(options.jsonMode ? { responseMimeType: "application/json" } : {}),
           },
         },
-        { timeout: 12000 }
+        { timeout: Math.min(3200, Math.max(1, deadline - Date.now())) }
       );
       const result = await model.generateContent(prompt);
       return result.response.text();
@@ -215,7 +216,7 @@ async function generateWithFallbackModel(
         msg.includes("api key not valid") ||
         msg.includes("401") ||
         msg.includes("403");
-      if (isAuthError) {
+      if (isAuthError || Date.now() >= deadline) {
         throw err;
       }
     }

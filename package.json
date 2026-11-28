@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "npm run db:push",
     "dev": "node scripts/copy-runanywhere-wasm.mjs && next dev",
     "build": "node scripts/copy-runanywhere-wasm.mjs && next build",
     "start": "next start",
@@ -19,6 +20,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "5.3.0",
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.22.0",
     "@runanywhere/web": "^0.20.27",

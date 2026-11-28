@@ -6,6 +6,7 @@ import { buildMenuTranslations } from "./menu-broadcast";
 import { recordReceipt } from "./payment-receipts";
 import { getDictionary } from "../i18n";
 import { kitchenCopy } from "./kitchen-language";
+import { deliverInSimulator, paymentReminder, supportedChatLanguage } from "./chat-delivery";
 
 export interface CustomerMatchCandidate {
   id: string;
@@ -238,6 +239,8 @@ export async function executeVoiceIntent(
     receiptId?: string;
     expectedBalance?: number;
     reminderPaymentIds?: string[];
+    reminderBalances?: Record<string, number>;
+    deferMenuTranslation?: boolean;
   }
 ): Promise<VoiceActionResult> {
   const { cookLang, tierUsed, db = prisma } = options;
@@ -991,6 +994,26 @@ export async function executeVoiceIntent(
         });
       }
 
+      if (options.reminderBalances && (targetPayments.length !== Object.keys(options.reminderBalances).length ||
+          targetPayments.some((payment) => payment.amount - payment.paidAmount !== options.reminderBalances?.[payment.id]))) {
+        return buildResult({
+          intent, entities, confidence: parsed.confidence, actionPerformed: false,
+          responseText: kitchenCopy(cookLang).retry,
+          actionSummary: "Balances changed. Review the reminders again.",
+        });
+      }
+      if (options.receiptId) {
+        for (const payment of targetPayments) {
+          const amount = payment.amount - payment.paidAmount;
+          const language = supportedChatLanguage(payment.customer.language);
+          await deliverInSimulator(db, {
+            id: `reminder:${options.receiptId}:${payment.id}`,
+            recipientName: payment.customer.name, customerId: payment.customerId,
+            kind: "reminder", sourceLanguage: cookLang, sourceText: paymentReminder(cookLang, amount),
+            text: paymentReminder(language, amount), language,
+          });
+        }
+      }
       await db.payment.updateMany({
         where: { id: { in: targetPayments.map((p) => p.id) } },
         data: { reminderSent: true },
@@ -999,7 +1022,7 @@ export async function executeVoiceIntent(
       const names = targetPayments.map((p) => p.customer.name.split(" ")[0]).join(", ");
       const responseText =
         cookLang === "en"
-          ? `Prepared simulated payment reminders for ${targetPayments.length} customers: ${names}.`
+          ? `${options.receiptId ? "Sent" : "Prepared"} simulated payment reminders for ${targetPayments.length} customers: ${names}.`
           : cookLang === "kn"
             ? `${targetPayments.length} ಗ್ರಾಹಕರಿಗೆ ಪಾವತಿ ನೆನಪಿಸುವ ಸಂದೇಶ ಕಳುಹಿಸಲಾಗಿದೆ: ${names}.`
             : `${targetPayments.length} customers ke simulated payment reminders taiyaar hain: ${names}.`;
@@ -1022,13 +1045,25 @@ export async function executeVoiceIntent(
     }
 
     case "menu_broadcast": {
-      const menuText = entities.menuText?.trim() || options.originalText.trim();
-      const languages = allCustomers.filter((c) => c.status === "active").map((c) => c.language);
-      const translations = await buildMenuTranslations(menuText, cookLang, languages);
+      const date = new Date(todayUTC.getTime() + 24 * 60 * 60 * 1000);
+      const previous = entities.appendMenu
+        ? await db.menuBroadcast.findFirst({ where: { date }, orderBy: { createdAt: "desc" } })
+        : null;
+      const addition = entities.menuText?.trim() || options.originalText.trim();
+      const menuText = [previous?.menuText, addition].filter(Boolean).join("\n");
+      const audience = allCustomers.filter((customer) => customer.status === "active" && customer.cookId === cook.id);
+      const languages = audience.map((customer) => customer.language);
+      const jainNote = previous?.jainNote ?? null;
+      const fullText = jainNote ? `${menuText}\n${jainNote}` : menuText;
+      const translations = options.deferMenuTranslation ? { [cookLang]: fullText }
+        : await buildMenuTranslations(fullText, cookLang, languages);
       const broadcast = await db.menuBroadcast.create({
         data: {
-          date: new Date(todayUTC.getTime() + 24 * 60 * 60 * 1000),
+          date,
           menuText,
+          jainNote,
+          sourceLanguage: cookLang,
+          audienceIds: JSON.stringify(audience.map(({ id }) => id)),
           translations: JSON.stringify(translations),
         },
       });
@@ -1048,7 +1083,7 @@ export async function executeVoiceIntent(
         actionSummary: "Menu draft saved",
         data: {
           menuText, broadcastId: broadcast.id, languages,
-          audience: allCustomers.filter((customer) => customer.status === "active").length,
+          audience: audience.length,
         },
       });
     }

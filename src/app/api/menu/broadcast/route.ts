@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       prisma.cook.findFirst(),
       prisma.customer.findMany({
         where: { status: "active" },
-        select: { language: true },
+        select: { id: true, language: true },
       }),
     ]);
 
@@ -90,6 +90,8 @@ export async function POST(request: NextRequest) {
         menuText,
         translations: JSON.stringify(translationsMap),
         jainNote,
+        sourceLanguage: cookLang,
+        audienceIds: JSON.stringify(activeCustomers.map(({ id }) => id)),
       },
     });
 

@@ -117,12 +117,98 @@ test("payment reminder preview opens without recording a payment", async ({ page
   const voice = (data: object) => request.post("/api/voice/process", { data });
   const proposal = await (await voice({ text: "Send payment reminders", cookLang: "en", kitchen: true })).json();
   expect(proposal.actionPerformed).toBe(false);
+  const inbox = async () => (await (await request.get("/api/messages")).json()).deliveries;
+  expect(await inbox()).toHaveLength(0);
   const confirmed = await (await voice({ confirmationToken: proposal.confirmationToken })).json();
+  expect((await inbox()).find((row: { recipientName: string }) => row.recipientName === "Priya Sharma").text).toContain("3500");
+  const deliveryCount = (await inbox()).length;
+  await voice({ confirmationToken: proposal.confirmationToken });
+  expect(await inbox()).toHaveLength(deliveryCount);
   const preview = confirmed.data.reminders.find((row: { name: string }) => row.name === "Priya Sharma").preview;
   await page.goto(preview);
   await expect(page.getByRole("heading", { name: "Simulated UPI reminder" })).toBeVisible();
   const { payments } = await (await request.get("/api/payments")).json();
   expect(payments.find((row: { customer: { name: string } }) => row.customer.name === "Priya Sharma").paidAmount).toBe(0);
+});
+
+test("Saathi auto-starts with permission and switches recognition and speech to Kannada", async ({ page, request }) => {
+  await request.put("/api/cook", { data: { language: "en" } });
+  await page.addInitScript(() => {
+    const status = Object.assign(new EventTarget(), { state: "granted" });
+    navigator.permissions.query = async () => status as PermissionStatus;
+  });
+  await page.goto("/");
+  await expect(page.getByText("Say Saathi", { exact: true })).toBeVisible();
+  await emitSpeech(page, "Saathi how many tiffins today?", true, 0.32);
+  await expect(page.getByText(/Today you have 8 tiffins/)).toBeVisible();
+  await page.getByRole("combobox", { name: "Language" }).selectOption("kn");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { recognition: { lang: string } }).recognition?.lang)).toBe("kn-IN");
+  await emitSpeech(page, "ಸಾಥಿ ಇಂದು ಎಷ್ಟು ಟಿಫಿನ್?");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { spoken: string[] }).spoken.at(-1))).toMatch(/ಇಂದು ಒಟ್ಟು 8/);
+  await page.keyboard.press("m");
+  await expect(page).toHaveURL(/\/voice\?listen=1/);
+  await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-kitchen-mode"))).toBe(false);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { recognition: { continuous: boolean } }).recognition?.continuous)).toBe(false);
+});
+
+test("a spoken menu addition is shared only after approval", async ({ page, request }) => {
+  await request.put("/api/cook", { data: { language: "en" } });
+  await request.post("/api/menu/broadcast", { data: { menuText: "Dal and rice" } });
+  const deliveries = async () => (await (await request.get("/api/messages")).json()).deliveries;
+  await page.goto("/");
+  await page.getByRole("button", { name: "Start Kitchen Mode" }).click();
+  await emitSpeech(page, "Saathi add regular meal with gulab jamun in tomorrow's menu");
+  await expect(page.getByText(/Dal and rice[\s\S]*regular meal with gulab jamun[\s\S]*Say yes/)).toBeVisible();
+  expect(await deliveries()).toHaveLength(0);
+  await emitSpeech(page, "yes");
+  await expect.poll(async () => (await deliveries()).length).toBeGreaterThan(1);
+  expect((await deliveries()).every((item: { text: string }) => item.text.includes("gulab jamun"))).toBe(true);
+});
+
+test("message OK applies a Hinglish skip and sends a dated Hindi reply once", async ({ page, request }) => {
+  await request.put("/api/cook", { data: { language: "en" } });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Start Kitchen Mode" }).click();
+  await expect(page.getByText("Say Saathi", { exact: true })).toBeVisible();
+  const tomorrowCount = async () => (await (await request.get("/api/tally?day=tomorrow")).json()).activeTiffins;
+  const before = await tomorrowCount();
+  const response = await request.post("/api/messages", {
+    data: { senderName: "Priya Sharma", originalLang: "hi", originalText: "kal mera tiffin cancel hai" },
+  });
+  const { message } = await response.json();
+  await expect(page.getByText(/Priya Sharma.*request to skip/i)).toBeVisible({ timeout: 12000 });
+  expect(await tomorrowCount()).toBe(before);
+  await emitSpeech(page, "message OK");
+  await expect(page.getByText("Sent 1 message in the simulator.", { exact: true })).toBeVisible();
+  expect(await tomorrowCount()).toBe(before - 1);
+  await request.post(`/api/messages/${message.id}/process`, { data: { action: "approveAndReply" } });
+  const { deliveries } = await (await request.get("/api/messages")).json();
+  expect(deliveries).toHaveLength(1);
+  expect(deliveries[0]).toMatchObject({ language: "hi", recipientName: "Priya Sharma" });
+  expect(deliveries[0].text).toMatch(/\d.*आपका टिफ़िन नहीं भेजा जाएगा/);
+});
+
+test("the customer chat receives an enquiry reply after the cook revisits and approves it", async ({ page, request, context }) => {
+  await request.put("/api/cook", { data: { language: "en" } });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Start Kitchen Mode" }).click();
+  const customer = await context.newPage();
+  await customer.goto("/messages");
+  await customer.getByRole("button", { name: "New contact" }).click();
+  await customer.getByRole("textbox", { name: "New customer name" }).fill("Nisha");
+  await customer.getByRole("button", { name: "Open", exact: true }).click();
+  await customer.getByRole("combobox", { name: "Message language" }).selectOption("en");
+  await customer.getByRole("textbox", { name: "Message text" }).fill("I want to start your tiffin service. What is the monthly fee?");
+  await customer.getByRole("button", { name: "Send simulated message" }).click();
+  await expect(page.getByText(/Nisha.*new.*tiffin.*monthly/i)).toBeVisible({ timeout: 12000 });
+  await emitSpeech(page, "later");
+  await expect(page.getByText("Okay, cancelled.", { exact: true })).toBeVisible();
+  expect((await (await request.get("/api/messages")).json()).deliveries).toHaveLength(0);
+  await emitSpeech(page, "Saathi read my messages");
+  await expect(page.getByText(/Nisha.*new.*tiffin.*monthly/i)).toBeVisible();
+  await emitSpeech(page, "yes");
+  await expect(customer.getByRole("log").getByText(/monthly.*₹/i)).toBeVisible({ timeout: 10000 });
+  expect((await (await request.get("/api/customers")).json()).customers).toHaveLength(10);
 });
 
 test("M activates voice; final speech updates orders once and speaks the result", async ({ page, request }, testInfo) => {

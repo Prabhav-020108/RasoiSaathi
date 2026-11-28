@@ -7,7 +7,7 @@ import { Mic } from "lucide-react";
 import { useApp } from "@/components/providers/AppProvider";
 import { isVoiceShortcut } from "@/lib/voice-shortcuts";
 
-export function MicButton() {
+export function MicButton({ hideFloating = false }: { hideFloating?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const { dict } = useApp();
@@ -23,7 +23,7 @@ export function MicButton() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [pathname, router]);
 
-  if (pathname === "/voice") {
+  if (pathname === "/voice" || hideFloating) {
     return null;
   }
 

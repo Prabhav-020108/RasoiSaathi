@@ -1,14 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import "@fontsource-variable/plus-jakarta-sans";
 import "./globals.css";
 import { AppProvider } from "@/components/providers/AppProvider";
 import { PhoneShell } from "@/components/layout/PhoneShell";
-
-const plusJakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-plus-jakarta",
-  weight: ["400", "500", "600", "700", "800"],
-});
 
 export const metadata: Metadata = {
   title: "RasoiSaathi — Voice-First Kitchen Companion",
@@ -39,7 +33,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={plusJakarta.variable}>
+    <html lang="en">
       <body className="font-sans antialiased">
         <AppProvider>
           <PhoneShell>{children}</PhoneShell>

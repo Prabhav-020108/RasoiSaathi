@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { approveMessageRecord, processMessageRecord } from "@/lib/message-processor";
 import { prisma } from "@/lib/prisma";
 import type { ParsedCommand } from "@/lib/voice-fallback";
+import { sendStoredReply } from "@/lib/chat-delivery";
 
 export const dynamic = "force-dynamic";
 
@@ -29,21 +30,24 @@ export async function POST(
         : null;
 
     const id = context.params.id;
-    if (body.action === "saveReply" || body.action === "approveReply") {
+    if (body.action === "approveReply") {
+      const message = await prisma.$transaction((db) => sendStoredReply(db, id));
+      return message ? NextResponse.json({ saved: true, message })
+        : NextResponse.json({ error: "Message or reply not found" }, { status: 404 });
+    }
+    if (body.action === "saveReply") {
       const reply = typeof body.reply === "string" ? body.reply.trim() : "";
-      if (body.action === "saveReply" && !reply) {
+      if (!reply) {
         return NextResponse.json({ error: "Reply text is required" }, { status: 400 });
       }
       const changed = await prisma.message.updateMany({
-        where: { id, ...(body.action === "approveReply" ? { autoReply: { not: null } } : {}) },
-        data: body.action === "approveReply"
-          ? { replyApprovedAt: new Date() }
-          : { autoReply: reply.slice(0, 4000), replyApprovedAt: null },
+        where: { id, replyApprovedAt: null },
+        data: { autoReply: reply.slice(0, 4000) },
       });
       return changed.count ? NextResponse.json({ saved: true }) : NextResponse.json({ error: "Message or reply not found" }, { status: 404 });
     }
-    const result = body.action === "approve"
-      ? await approveMessageRecord(id, typeof body.proposal === "string" ? body.proposal : undefined)
+    const result = body.action === "approve" || body.action === "approveAndReply"
+      ? await approveMessageRecord(id, typeof body.proposal === "string" ? body.proposal : undefined, body.action === "approveAndReply")
       : await processMessageRecord(id, {
       tierHint,
       localParsed,

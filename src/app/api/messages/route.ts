@@ -6,14 +6,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const messages = await prisma.message.findMany({
+    const [messages, deliveries] = await Promise.all([prisma.message.findMany({
       include: {
         customer: {
           select: { id: true, name: true, language: true, dietaryPref: true },
         },
       },
       orderBy: { createdAt: "desc" },
-    });
+    }), prisma.chatDelivery.findMany({ orderBy: { createdAt: "asc" } })]);
 
     const newCount = messages.filter((m) => m.status === "new").length;
     const processedCount = messages.filter((m) => m.status === "processed").length;
@@ -25,6 +25,7 @@ export async function GET() {
         processed: processedCount,
       },
       messages,
+      deliveries,
     });
   } catch (error) {
     console.error("GET /api/messages failed:", error);
@@ -61,7 +62,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Choose a supported message language" }, { status: 400 });
     }
 
-    const matches = await prisma.customer.findMany({
+    const selected = typeof body.customerId === "string"
+      ? await prisma.customer.findUnique({ where: { id: body.customerId } }) : null;
+    if (typeof body.customerId === "string" && !selected) {
+      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    }
+    const matches = selected ? [selected] : await prisma.customer.findMany({
       where: {
         name: senderName,
       },
@@ -71,7 +77,7 @@ export async function POST(request: NextRequest) {
     const created = await prisma.message.create({
       data: {
         customerId: matches.length === 1 ? matches[0].id : null,
-        senderName,
+        senderName: selected?.name ?? senderName,
         originalText,
         originalLang,
         status: "new",

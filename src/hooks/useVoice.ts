@@ -93,6 +93,7 @@ function getFriendlyErrorMessage(code: string, lang: string): string {
 export interface UseVoiceOptions {
   lang?: string;
   kitchen?: boolean;
+  acceptFinalTranscript?: (transcript: string, confidence: number) => boolean;
   onFinalTranscript?: (transcript: string, confidence: number) => void;
   onRecognitionFailure?: (code: string) => void;
 }
@@ -104,6 +105,8 @@ export function useVoice(options: UseVoiceOptions = {}) {
   onFinalTranscriptRef.current = options.onFinalTranscript;
   const onFailureRef = useRef(options.onRecognitionFailure);
   onFailureRef.current = options.onRecognitionFailure;
+  const acceptRef = useRef(options.acceptFinalTranscript);
+  acceptRef.current = options.acceptFinalTranscript;
 
   const [isSTTSupported, setIsSTTSupported] = useState(false);
   const [isTTSSupported, setIsTTSSupported] = useState(false);
@@ -221,7 +224,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
 
     const recognition = new SpeechCtor();
     recognition.lang = getSpeechLocale(lang);
-    recognition.continuous = false;
+    recognition.continuous = kitchen;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognitionRef.current = recognition;
@@ -234,7 +237,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
         setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
       }, 500);
 
-      silenceTimerRef.current = setTimeout(() => {
+      if (!kitchen) silenceTimerRef.current = setTimeout(() => {
         if (recognitionRef.current !== recognition) return;
         if (!latestTranscriptRef.current.trim()) {
           setError(getFriendlyErrorMessage("silence-timeout", lang));
@@ -267,7 +270,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
       let finalText = "";
       let bestConf = 1;
 
-      for (let i = 0; i < event.results.length; i += 1) {
+      for (let i = kitchen ? (event.resultIndex ?? 0) : 0; i < event.results.length; i += 1) {
         const res = event.results[i];
         const alt = res[0];
         if (!alt) continue;
@@ -287,6 +290,7 @@ export function useVoice(options: UseVoiceOptions = {}) {
       setInterimTranscript(trimmedInterim);
 
       if (trimmedFinal && !finalCapturedRef.current) {
+        if (acceptRef.current && !acceptRef.current(trimmedFinal, bestConf)) return;
         finalCapturedRef.current = true;
         setTranscript(trimmedFinal);
         setInterimTranscript("");

@@ -2,10 +2,12 @@ import { translateText, type AITier } from "./ai-provider";
 
 export interface InboxMessage {
   id: string;
+  customerId: string | null;
   senderName: string;
   originalText: string;
   originalLang: string;
   status: string;
+  intent: string | null;
   translatedText: string | null;
   translatedLang: string | null;
   autoReply: string | null;
@@ -14,7 +16,7 @@ export interface InboxMessage {
   createdAt: string;
 }
 
-export async function inboxAction(id: string, action: "read" | "approve" | "saveReply" | "approveReply", fields: object = {}) {
+export async function inboxAction(id: string, action: "read" | "approve" | "approveAndReply" | "saveReply" | "approveReply", fields: object = {}) {
   const response = await fetch(`/api/messages/${encodeURIComponent(id)}/process`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...fields, action }),
   });

@@ -58,6 +58,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+`npm run dev` syncs the SQLite schema before starting. Keep `DATABASE_URL` in `.env` so Prisma and Next.js use the same database. For a dev server that's already running after a pull, run `npm run db:push` and reload the page if an API reports a missing column.
+
 ### Verification Commands
 
 ```bash
@@ -72,9 +74,9 @@ node scripts/verify-docker.mjs
 
 ## Voice controls and AI configuration
 
-For hands-free mobile use, tap **Start Kitchen Mode** once and keep the app visible. Say **RasoiSaathi**, then say the command after the listening cue. You can also say the name and command together. Say **stop kitchen mode** to end the session. The phone needs a secure origin, microphone permission and speech support. See the [kitchen roadmap and phone rehearsal](KITCHEN-ROADMAP.md).
+Kitchen Mode starts when the app opens and the browser reports that microphone access is already granted. If the browser needs permission, tap **Start Kitchen Mode**. Keep the app visible and say **“Saathi, how many tiffins today?”** in one breath, or say **“Saathi”** and wait for the listening cue on screen. Say **“stop kitchen mode”** to end the session. See the [kitchen roadmap and phone rehearsal](KITCHEN-ROADMAP.md).
 
-New simulated messages are announced during a pause. The cook can approve the proposed update, defer it, or dictate a reply. The inbox keeps the original text and presents the cook-language translation when available. Replies and menu approval use simulated delivery.
+In **Messages**, choose **Kitchen** or **Customer** to see either side of the same simulated conversation. Kitchen Mode reads new messages during a pause and uses the cook’s selected language. Say **“send reply”** to apply an announced skip and send the confirmation, or **“later”** to hold an enquiry for **“Saathi, read my messages.”** Menu broadcasts and payment reminders appear in the recipient’s chat after approval.
 
 Press **M** from any main screen to open the voice console and start listening, or tap the floating mic. On the voice screen, **M** starts/stops listening; **Escape** cancels listening and speech. The shortcut is ignored while typing or using a dialog. Allow microphone access in Chrome/Edge on localhost or HTTPS.
 
@@ -86,7 +88,7 @@ Final speech is transcribed, processed, applied to SQLite, reflected in the dash
 - `Priya ka payment aa gaya` (records the full monthly payment)
 - `Kal ka menu: dal tadka, rice, roti` (saves tomorrow's menu draft)
 
-Ambiguous names require a candidate selection or the last four phone digits. Unfinished or failed recognition does not execute commands. Browser speech recognition may require internet; voice quality and available TTS languages depend on the browser/device. This prototype uses tap/M activation, with always-on wake-word detection deferred.
+Ambiguous names require a candidate selection or the last four phone digits. The phone needs a trusted HTTPS origin, microphone permission and browser speech support. Recognition may use an online speech service. Recognition quality and available voices depend on the device and browser.
 
 Gemini activates automatically when the server key is configured, even if Basic Mode was selected earlier. No key is entered or stored in the app; legacy browser-stored keys are removed. Without a server key, the app displays its unavailable status and supports Basic Mode or optional Local AI. WhatsApp sending remains simulated.
 

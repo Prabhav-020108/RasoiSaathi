@@ -7,6 +7,7 @@ import { ensureMonthlyBills } from "@/lib/payment-receipts";
 import { geminiProcess, resolveGeminiKey, type GeminiVoiceContext } from "@/lib/gemini";
 import { executeVoiceIntent } from "@/lib/voice-actions";
 import { keywordProcess, type FallbackIntent, type ParsedCommand } from "@/lib/voice-fallback";
+import { kitchenFastPath } from "@/lib/kitchen-fast-path";
 
 export const dynamic = "force-dynamic";
 
@@ -136,13 +137,13 @@ export async function POST(request: NextRequest) {
         remaining: Math.max(0, p.amount - p.paidAmount),
       }));
 
-    let parsed: ParsedCommand | null = null;
+    let parsed: ParsedCommand | null = body.kitchen ? kitchenFastPath(text, customers) : null;
     let tierUsed: "gemini" | "local" | "basic" = "basic";
     let fallbackReason: string | undefined;
 
     // 1. Pre-parsed Tier 2 (RunAnywhere local LLM in browser)
     const localParsed = normalizeLocalParsed(body.localParsed);
-    if (localParsed && !geminiKey) {
+    if (!parsed && localParsed && !geminiKey) {
       parsed = localParsed;
       tierUsed = "local";
     }
@@ -215,6 +216,7 @@ export async function POST(request: NextRequest) {
       cookLang,
       tierUsed,
       originalText: text,
+      deferMenuTranslation: body.kitchen === true,
     });
 
     return NextResponse.json({

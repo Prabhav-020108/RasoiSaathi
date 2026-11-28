@@ -1,9 +1,12 @@
 import { prisma } from "./prisma";
 import { getDailyTally } from "./tally";
-import { getCurrentMonthKey, getTodayUTC, SUPPORTED_LANGUAGES } from "./utils";
+import { getTodayUTC, SUPPORTED_LANGUAGES } from "./utils";
 import { geminiProcess, geminiTranslate, resolveGeminiKey, type GeminiVoiceContext } from "./gemini";
 import { executeVoiceIntent } from "./voice-actions";
 import { keywordProcess, type FallbackIntent, type ParsedCommand } from "./voice-fallback";
+import { enquiryDetails, isTiffinEnquiry } from "./customer-enquiry";
+import { parseTranslationsJson } from "./menu-broadcast";
+import { sendStoredReply } from "./chat-delivery";
 
 const AUTO_REPLIES_HI: Record<string, string> = {
   skip: "Theek hai! Aaj ka tiffin band kar diya. 🙏",
@@ -115,14 +118,18 @@ function acknowledgedReply(lang: string) {
   })[lang] ?? getAutoReplyForIntent("unknown", lang);
 }
 
-export async function approveMessageRecord(id: string, reviewedProposal?: string): Promise<ProcessMessageResult | null> {
+export async function approveMessageRecord(id: string, reviewedProposal?: string, sendReply = false): Promise<ProcessMessageResult | null> {
   return prisma.$transaction(async (db) => {
     const message = await db.message.findUnique({ where: { id } });
     if (!message) return null;
     const outcome: ProcessMessageResult = {
       message, alreadyProcessed: message.status === "processed", actionPerformed: false, tierUsed: "basic",
     };
-    if (outcome.alreadyProcessed || !message.proposal ||
+    if (outcome.alreadyProcessed) {
+      if (sendReply && message.autoReply) outcome.message = (await sendStoredReply(db, id)) ?? message;
+      return outcome;
+    }
+    if (!message.proposal ||
         (reviewedProposal !== undefined && reviewedProposal !== message.proposal)) return outcome;
     const proposal: MessageProposal = JSON.parse(message.proposal);
     const orderDay = new Date(proposal.orderDay);
@@ -138,15 +145,18 @@ export async function approveMessageRecord(id: string, reviewedProposal?: string
       tierUsed: proposal.tierUsed, originalText: message.originalText,
     });
     if (!result.actionPerformed) return outcome;
-    const autoReply = proposal.parsed.intent === "skip"
+    const dated = proposal.parsed.intent === "skip" ||
+      (proposal.parsed.intent === "cancel" && !proposal.parsed.entities.permanent);
+    const autoReply = dated
       ? datedSkipReply(message.originalLang, proposal.orderDay)
       : acknowledgedReply(message.originalLang);
     outcome.message = await db.message.update({
       where: { id }, data: { status: "processed", autoReply, replyApprovedAt: null },
     });
+    if (sendReply) outcome.message = (await sendStoredReply(db, id)) ?? outcome.message;
     return {
       ...outcome, actionPerformed: true, actionSummary: result.actionSummary, tierUsed: proposal.tierUsed,
-      replyMeaning: proposal.parsed.intent === "skip" ? datedSkipReply(cook?.language ?? "hi", proposal.orderDay) : undefined,
+      replyMeaning: dated ? datedSkipReply(cook?.language ?? "hi", proposal.orderDay) : undefined,
     };
   });
 }
@@ -183,31 +193,46 @@ export async function processMessageRecord(
     };
   }
 
-  const currentMonth = getCurrentMonthKey();
-  const [cook, customers, tally, payments] = await Promise.all([
+  const [cook, customers] = await Promise.all([
     prisma.cook.findFirst(),
     prisma.customer.findMany({ orderBy: { createdAt: "asc" } }),
-    getDailyTally(),
-    prisma.payment.findMany({
-      where: { month: currentMonth },
-      include: { customer: true },
-    }),
   ]);
 
   const cookLang = cook?.language || "hi";
-  const pendingCustomers = payments
-    .filter((p) => p.status !== "paid" && p.amount - p.paidAmount > 0)
-    .map((p) => ({
-      name: p.customer.name,
-      remaining: Math.max(0, p.amount - p.paidAmount),
-    }));
+  const senderMatches = customers.filter((customer) => customer.name.toLowerCase() === existing.senderName.toLowerCase());
+  const customerId = existing.customerId ?? (senderMatches.length === 1 ? senderMatches[0].id : undefined);
+  if (!customerId && isTiffinEnquiry(existing.originalText)) {
+    const menu = await prisma.menuBroadcast.findFirst({
+      where: { sentAt: { not: null }, date: { gte: getTodayUTC() } }, orderBy: { date: "asc" },
+    });
+    const availableMenu = menu ? parseTranslationsJson(menu.translations) : {};
+    const menuIn = (language: string) => availableMenu[language]?.split(" (Original - translate with Gemini API)")[0];
+    const offer = enquiryDetails(existing.originalLang, cook?.defaultPrice ?? 3000, menuIn(existing.originalLang));
+    const review = enquiryDetails(cookLang, cook?.defaultPrice ?? 3000, menuIn(cookLang));
+    const message = await prisma.message.update({
+      where: { id: existing.id },
+      data: { intent: "enquiry", status: "review", readAt: existing.readAt ?? new Date(),
+        ...(existing.replyApprovedAt ? {} : { autoReply: existing.autoReply ?? offer.reply }) },
+    });
+    return { message, alreadyProcessed: false, actionPerformed: false, tierUsed: "basic",
+      spokenSummary: review.lead, replyMeaning: review.reply };
+  }
 
   const geminiKey = resolveGeminiKey(options.apiKeyOverride);
-  let parsed: ParsedCommand | null = geminiKey ? null : options.localParsed ?? null;
-  let tierUsed: "gemini" | "local" | "basic" = parsed ? "local" : "basic";
+  const tomorrow = /\btomorrow\b|\bkal\b|कल|ನಾಳೆ|நாளை|రేపు|उद्या/i.test(existing.originalText);
+  const today = /\btoday\b|\baaj\b|आज|ಇಂದು|இன்று|ఈరోజు/i.test(existing.originalText);
+  const date = today === tomorrow ? undefined : tomorrow ? "tomorrow" : "today";
+  const clearSkip = /^(?:आज|कल)(?: का)? (?:मेरा )?टिफ़?िन (?:मत भेज(?:ना|िए|ो)|नहीं चाहिए|(?:कैंसल|कॅन्सल|कैंसिल|cancel|रद्द)(?: है| कर (?:दो|दीजिए))?)[।.!]?$/i.test(existing.originalText.trim()) ||
+    /^(?:kal|aaj)(?: ka)? (?:mera )?tiffin (?:cancel(?: hai| kar do)?|mat bhejna|nahi chahiye)[.!]?$/i.test(existing.originalText.trim()) ||
+    /^(please )?skip (my tiffin )?(today|tomorrow)[.!]?$/i.test(existing.originalText.trim());
+  let parsed: ParsedCommand | null = clearSkip && date
+    ? { intent: "skip", confidence: 0.95, entities: { date } }
+    : geminiKey ? null : options.localParsed ?? null;
+  let tierUsed: "gemini" | "local" | "basic" = parsed && !clearSkip ? "local" : "basic";
 
   if (!parsed && geminiKey) {
     try {
+      const tally = await getDailyTally();
       const context: GeminiVoiceContext = {
         cookName: cook?.name || "Sunita Devi",
         cookLang,
@@ -231,7 +256,7 @@ export async function processMessageRecord(
           pendingPaymentsTotal: tally.pendingPaymentsTotal,
           pendingPaymentsCount: tally.pendingPaymentsCount,
         },
-        pendingCustomers,
+        pendingCustomers: [],
       };
       parsed = await geminiProcess(
         `${existing.senderName}: ${existing.originalText}`,
@@ -253,15 +278,8 @@ export async function processMessageRecord(
     tierUsed = "basic";
   }
 
-  const tomorrow = /\btomorrow\b|\bkal\b|कल|ನಾಳೆ|நாளை|రేపు|उद्या/i.test(existing.originalText);
-  const today = /\btoday\b|\baaj\b|आज|ಇಂದು|இன்று|ఈరోజు/i.test(existing.originalText);
-  const date = today === tomorrow ? undefined : tomorrow ? "tomorrow" : "today";
-  const clearHindiSkip = /^(आज|कल)( मेरा)? टिफ़?िन (मत भेजना|नहीं चाहिए)[।.!]?$/i.test(existing.originalText.trim());
-  if (clearHindiSkip && date) {
-    parsed = { intent: "skip", confidence: 0.95, entities: { date } };
-  }
   let translatedText: string | null = null;
-  if (existing.originalLang !== cookLang && geminiKey) {
+  if (existing.originalLang !== cookLang && geminiKey && !clearSkip) {
     try {
       const tr = await geminiTranslate(existing.originalText, existing.originalLang, cookLang, geminiKey);
       if (tr.translated.trim() !== existing.originalText.trim()) translatedText = tr.translated;
@@ -273,8 +291,6 @@ export async function processMessageRecord(
     translatedText = options.localTranslation.trim().slice(0, 4000);
   }
 
-  const senderMatches = customers.filter((customer) => customer.name.toLowerCase() === existing.senderName.toLowerCase());
-  const customerId = existing.customerId ?? (senderMatches.length === 1 ? senderMatches[0].id : undefined);
   const needsDay = ["skip", "cancel", "extra"].includes(parsed.intent);
   const orderDay = getTodayUTC(existing.createdAt);
   if (date === "tomorrow") orderDay.setUTCDate(orderDay.getUTCDate() + 1);
@@ -304,8 +320,7 @@ export async function processMessageRecord(
     alreadyProcessed: false,
     actionPerformed: false,
     tierUsed,
-    spokenSummary: proposal && parsed.intent === "skip" &&
-      (clearHindiSkip || /^(please )?skip (my tiffin )?(today|tomorrow)\b/i.test(existing.originalText))
+    spokenSummary: proposal && parsed.intent === "skip" && clearSkip
       ? skipProposalSummary(cookLang, orderDay.toISOString()) : undefined,
   };
 }

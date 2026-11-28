@@ -8,24 +8,26 @@ import { AISetupModal } from "@/components/ai/AISetupModal";
 import { KitchenMode } from "@/components/voice/KitchenMode";
 
 export function PhoneShell({ children }: { children: React.ReactNode }) {
-  const isVoicePage = usePathname() === "/voice";
+  const pathname = usePathname();
+  const isVoicePage = pathname === "/voice";
+  const isChat = pathname === "/messages";
   return (
     <div className="h-[100dvh] w-full overflow-hidden bg-[#FFF7ED] lg:bg-gradient-to-br lg:from-orange-100/70 lg:via-stone-100 lg:to-violet-100/70 lg:flex lg:flex-col lg:items-center lg:justify-center lg:px-6 lg:py-4">
-      <div className="relative flex flex-col w-full h-full sm:max-w-[540px] sm:mx-auto lg:w-[420px] lg:h-[844px] lg:max-h-[calc(100dvh-5rem)] bg-[#FFF7ED] lg:rounded-[44px] lg:border-[10px] lg:border-stone-900 lg:shadow-phone overflow-hidden">
+      <div className={`relative flex flex-col w-full h-full sm:mx-auto lg:h-[844px] lg:max-h-[calc(100dvh-5rem)] bg-[#FFF7ED] lg:border-[10px] lg:border-stone-900 lg:shadow-phone overflow-hidden ${isChat ? "lg:max-w-[1080px] lg:rounded-3xl" : "sm:max-w-[540px] lg:w-[420px] lg:rounded-[44px]"}`}>
         {/* Subtle desktop phone speaker notch */}
         <div className="hidden lg:flex items-center justify-center pt-2.5 pb-1 bg-orange-100/70 shrink-0">
           <div className="w-20 h-1.5 rounded-full bg-stone-900/20" />
         </div>
 
-        <KitchenMode />
+        {!isVoicePage && <KitchenMode />}
 
         {/* Scrollable screen body */}
-        <main className={`flex-1 min-h-0 overflow-y-auto phone-scroll ${isVoicePage ? "pb-20" : "pb-28"}`}>
+        <main className={`flex-1 min-h-0 overflow-y-auto phone-scroll ${isVoicePage || isChat ? "pb-20" : "pb-28"}`}>
           {children}
         </main>
 
         {/* Floating always-visible Voice Mic CTA */}
-        <MicButton />
+        <MicButton hideFloating={isChat} />
 
         {/* Fixed 5-tab thumb-reachable bottom nav */}
         <BottomNav />

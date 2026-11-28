@@ -199,6 +199,8 @@ export async function seedDatabase(
   }
 
   if (options.force) {
+    await prisma.chatDelivery.deleteMany();
+    await prisma.voiceApproval.deleteMany();
     await prisma.message.deleteMany();
     await prisma.dailyOrder.deleteMany();
     await prisma.payment.deleteMany();
